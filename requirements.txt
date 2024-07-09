@@ -1,0 +1,10 @@
+fastapi==0.68.0
+uvicorn==0.15.0
+sqlalchemy==1.4.23
+pydantic==1.8.2
+plaid-python==7.2.1
+python-dotenv==0.19.0
+psycopg2-binary==2.9.1
+apache-airflow==2.3.0
+dbt-core==0.21.0
+dbt-postgres==0.21.0
