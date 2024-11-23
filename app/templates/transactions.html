@@ -1,0 +1,242 @@
+<html>
+<head>
+    <link href='https://fonts.googleapis.com/css?family=Roboto' rel='stylesheet'>
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.css">
+    <style>
+        body { 
+            background-color: #B1EEFC; 
+            font-family: 'Roboto', sans-serif; 
+        }
+        .container {
+            width: 95%;
+            margin: 20px auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .back-button {
+            background-color: #0A85EA;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .dataTables_wrapper {
+            margin-top: 20px;
+            width: 100%;
+            overflow-x: auto;
+        }
+        table.dataTable {
+            width: 100% !important;
+            margin: 0 !important;
+        }
+        table.dataTable th, 
+        table.dataTable td {
+            padding: 8px 10px;
+            text-align: left;
+            white-space: nowrap;
+        }
+        .amount-positive {
+            color: green;
+        }
+        .amount-negative {
+            color: red;
+        }
+        .edit-category {
+            cursor: pointer;
+            color: #0A85EA;
+            text-decoration: underline;
+        }
+        .category-input {
+            padding: 4px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 150px;
+        }
+        .save-category {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 5px;
+        }
+        .cancel-edit {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 5px;
+        }
+        .edit-options {
+            margin-top: 8px;
+        }
+        .update-all-label {
+            display: block;
+            margin: 8px 0;
+            font-size: 0.9em;
+            color: #666;
+        }
+        .update-all-checkbox {
+            margin-right: 8px;
+        }
+        .button-group {
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>All Transactions</h1>
+            <a href="/" class="back-button">Back to Home</a>
+        </div>
+        
+        <div id="transactions-table"></div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+    <script>
+        function createCategoryCell(transactionId, category, transactionName) {
+            const escapedTransactionName = transactionName ? transactionName.replace(/'/g, "\\'") : '';
+            return `
+                <div class="category-display">
+                    <span class="category-text">${category || 'N/A'}</span>
+                    <a class="edit-category" onclick="editCategory(this, '${transactionId}', '${category || ''}', '${escapedTransactionName}')">✏️</a>
+                </div>
+            `;
+        }
+
+        function editCategory(element, transactionId, currentCategory, transactionName) {
+            const container = element.closest('.category-display');
+            const input = document.createElement('div');
+            input.className = 'category-edit';
+            
+            // Base64 encode the transaction name to preserve special characters
+            const encodedTransactionName = btoa(transactionName);
+            
+            input.innerHTML = `
+                <div>
+                    <input type="text" class="category-input" value="${currentCategory || ''}" />
+                    <div class="edit-options">
+                        <label class="update-all-label">
+                            <input type="checkbox" class="update-all-checkbox" />
+                            Update all "${transactionName}" transactions
+                        </label>
+                        <div class="button-group">
+                            <button class="save-category" onclick="saveCategory(this, '${transactionId}', '${encodedTransactionName}')">Save</button>
+                            <button class="cancel-edit" onclick="cancelEdit(this, '${transactionId}', '${currentCategory || ''}')">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.replaceWith(input);
+        }
+
+        function saveCategory(element, transactionId, encodedTransactionName) {
+            const container = element.closest('.category-edit');
+            const newCategory = container.querySelector('.category-input').value;
+            const updateAll = container.querySelector('.update-all-checkbox').checked;
+            
+            // Decode the Base64 encoded transaction name
+            const transactionName = atob(encodedTransactionName);
+            
+            fetch('/api/transactions/update_category', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    transaction_id: transactionId,
+                    category: newCategory,
+                    update_all: updateAll,
+                    transaction_name: transactionName
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    if (updateAll) {
+                        window.location.reload();
+                    } else {
+                        const newCell = document.createElement('div');
+                        newCell.innerHTML = createCategoryCell(transactionId, newCategory, transactionName);
+                        container.replaceWith(newCell.firstElementChild);
+                    }
+                } else {
+                    alert('Error updating category: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error updating category: ' + error.message);
+            });
+        }
+
+        function cancelEdit(element, transactionId, currentCategory) {
+            const container = element.closest('.category-edit');
+            const newCell = document.createElement('div');
+            newCell.innerHTML = createCategoryCell(transactionId, currentCategory);
+            container.replaceWith(newCell.firstElementChild);
+        }
+
+        $(document).ready(function() {
+            $.ajax({
+                url: '/api/transactions',
+                method: 'GET',
+                success: function(data) {
+                    let tableHtml = '<table class="display"><thead><tr>';
+                    if (data && data.length > 0) {
+                        Object.keys(data[0]).forEach(key => {
+                            tableHtml += `<th>${key}</th>`;
+                        });
+                        tableHtml += '</tr></thead><tbody>';
+                        
+                        data.forEach(row => {
+                            tableHtml += '<tr>';
+                            Object.entries(row).forEach(([key, value]) => {
+                                if (key === 'category') {
+                                    tableHtml += `<td>${createCategoryCell(row.transaction_id, value, row.name)}</td>`;
+                                } else if (key === 'amount') {
+                                    const amountClass = value < 0 ? 'amount-negative' : 'amount-positive';
+                                    tableHtml += `<td class="${amountClass}">$${Math.abs(value).toFixed(2)}</td>`;
+                                } else {
+                                    tableHtml += `<td>${value === null ? '<span class="null-value">NULL</span>' : value}</td>`;
+                                }
+                            });
+                            tableHtml += '</tr>';
+                        });
+                    }
+                    tableHtml += '</tbody></table>';
+                    
+                    $('#transactions-table').html(tableHtml);
+                    
+                    $('.display').DataTable({
+                        scrollX: true,
+                        pageLength: 25,
+                        order: [[3, 'desc']]
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html> 

@@ -1,8 +1,0 @@
-personal_finance_app:
-  target: dev
-  outputs:
-    dev:
-      type: sqlite
-      threads: 1
-      database: 'path/to/your/finance_app.db'
-      schema: main

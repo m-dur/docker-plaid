@@ -1,0 +1,127 @@
+@startuml Financial Database Schema
+
+' Basic styling
+skinparam BackgroundColor #2B2B2B
+skinparam linetype ortho
+skinparam Padding 2
+skinparam roundcorner 5
+skinparam nodesep 60
+skinparam ranksep 80
+
+' Class styling
+skinparam class {
+    AttributeFontColor white
+    AttributeFontSize 12
+    BackgroundColor #2B2B2B
+    BorderColor #666666
+    StereotypeFontColor white
+    HeaderBackgroundColor<<core>> #4B0082
+    HeaderBackgroundColor<<transaction>> #0066CC
+    HeaderBackgroundColor<<reference>> #006633
+}
+
+' Core tables
+class accounts <<core>> {
+    + account_id: varchar <<PK>>
+    account_name: varchar
+    last_updated_datetime: timestamp
+    account_type_id: integer <<FK>>
+    institution_id: varchar <<FK>>
+    mask: varchar(20)
+    verification_status: varchar(50)
+    currency: varchar(3)
+    created_at: timestamp
+    pull_date: date
+}
+
+' Reference tables
+class account_types <<reference>> {
+    + id: serial <<PK>>
+    account_type: varchar(50)
+    subtype: varchar(50)
+    status: varchar(20)
+    created_at: timestamp
+}
+
+class institutions <<reference>> {
+    + id: varchar <<PK>>
+    name: varchar
+    url: varchar
+    oauth: boolean
+    refresh_interval: varchar
+    type: text
+    status: varchar
+    billed_products: text
+    created_at: timestamp
+}
+
+class category_mappings <<reference>> {
+    + transaction_name: varchar <<PK>>
+    category: varchar
+    last_updated: timestamp
+}
+
+' Transaction tables
+class transactions <<transaction>> {
+    + transaction_id: varchar <<PK>>
+    account_id: varchar <<FK>>
+    amount: decimal(12,2)
+    date: date
+    name: varchar
+    category: varchar
+    group_name: varchar
+    merchant_name: varchar
+    payment_channel: varchar(50)
+    authorized_datetime: timestamp
+    created_at: timestamp
+    pull_date: date
+}
+
+class depository_accounts <<transaction>> {
+    + account_id: varchar <<PK,FK>>
+    balance_current: decimal(12,2)
+    balance_available: decimal(12,2)
+    pull_date: date
+}
+
+class credit_accounts <<transaction>> {
+    + account_id: varchar <<PK,FK>>
+    balance_current: decimal(12,2)
+    balance_available: decimal(12,2)
+    balance_limit: decimal(12,2)
+    last_statement_balance: decimal(12,2)
+    last_statement_date: date
+    minimum_payment_amount: decimal(12,2)
+    next_payment_due_date: date
+    apr_percentage: decimal(5,2)
+    apr_type: varchar(50)
+    balance_subject_to_apr: decimal(12,2)
+    interest_charge_amount: decimal(12,2)
+    pull_date: date
+    created_at: timestamp
+}
+
+class investment_accounts <<transaction>> {
+    + account_id: varchar <<PK,FK>>
+    balance_current: decimal(12,2)
+    pull_date: date
+}
+
+class loan_accounts <<transaction>> {
+    + account_id: varchar <<PK,FK>>
+    balance_current: decimal(12,2)
+    original_loan_amount: decimal(12,2)
+    interest_rate: decimal(6,3)
+    pull_date: date
+}
+
+' Relationships
+accounts -[#ffffff]right-> transactions
+accounts -[#ffffff]left-> account_types
+accounts -[#ffffff]up-> institutions
+accounts -[#ffffff]right-> depository_accounts
+accounts -[#ffffff]right-> credit_accounts
+accounts -[#ffffff]right-> investment_accounts
+accounts -[#ffffff]right-> loan_accounts
+
+@enduml

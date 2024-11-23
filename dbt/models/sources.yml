@@ -1,8 +1,0 @@
-version: 2
-
-sources:
-  - name: raw
-    database: finance_db  # this should match your actual database name
-    schema: public        # this should match your actual schema name
-    tables:
-      - name: transactions

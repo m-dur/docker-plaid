@@ -1,0 +1,110 @@
+@startuml Financial Data Fetcher Architecture
+
+' Styling
+skinparam componentStyle uml2
+skinparam component {
+  BackgroundColor LightBlue
+  BorderColor Black
+  ArrowColor Black
+}
+
+' Components
+package "Web Application" {
+  [app.py] as App
+  [templates/index.html] as UI
+  [db_schema.py] as SchemaGen
+}
+
+package "Services" {
+  [plaid_service.py] as PlaidService
+  
+  package "Financial Data Handler" {
+    [FinancialDataHandler] as DataHandler
+    
+    package "Processors" {
+      [accounts_processor] as AccountProcessor
+      [institutions_processor] as InstProcessor
+      [transactions_processor] as TransProcessor
+    }
+    
+    package "DB Operations" {
+      [accounts_db] as AccountDB
+      [institutions_db] as InstDB
+      [transactions_db] as TransDB
+      [query_operations] as QueryOps
+    }
+  }
+}
+
+package "Storage" {
+  database "PostgreSQL" as DB {
+    [accounts]
+    [institutions]
+    [transactions]
+    [category_mappings]
+    [account_types]
+    [depository_accounts]
+    [credit_accounts]
+    [investment_accounts]
+    [loan_accounts]
+  }
+  
+  database "Files" as Files {
+    [access_tokens.json]
+    [cursor.json]
+  }
+}
+
+package "External Services" {
+  [Plaid API] as PlaidAPI
+}
+
+' Relationships
+App --> UI : renders
+App --> PlaidService : uses
+App --> DataHandler : orchestrates
+App --> SchemaGen : generates DB diagram
+
+DataHandler --> PlaidService : fetches data
+DataHandler ..> AccountProcessor : processes
+DataHandler ..> InstProcessor : processes
+DataHandler ..> TransProcessor : processes
+
+DataHandler --> AccountDB : saves
+DataHandler --> InstDB : saves
+DataHandler --> TransDB : saves
+DataHandler --> QueryOps : executes
+
+PlaidService --> PlaidAPI : makes API calls
+PlaidService --> Files : manages tokens
+AccountDB --> DB : writes
+InstDB --> DB : writes
+TransDB --> DB : writes
+QueryOps --> DB : queries
+
+' Notes
+note right of DataHandler
+  Main Orchestrator
+  - Manages database connections
+  - Coordinates data processing
+  - Handles transactions sync
+  - Updates category mappings
+end note
+
+note right of PlaidService
+  Plaid Integration
+  - Manages access tokens
+  - Handles API responses
+  - Syncs transactions
+  - Manages cursors
+end note
+
+note right of DB
+  Database Schema
+  - Core tables (accounts)
+  - Reference tables (institutions, account_types)
+  - Transaction tables
+  - Specialized account tables
+end note
+
+@enduml
