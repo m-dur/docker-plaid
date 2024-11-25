@@ -126,15 +126,46 @@ class FinancialDataHandler:
                         item_info = get_item(access_token)
                         institution_id = item_info['institution_id']
                     
-                    # Delete all related data in correct order
+                    current_pull_date = datetime.now().date()
+                    
+                    # Delete only data from current refresh cycle
                     cur.execute("BEGIN")
-                    cur.execute("DELETE FROM transactions WHERE account_id IN (SELECT account_id FROM accounts WHERE institution_id = %s)", (institution_id,))
-                    cur.execute("DELETE FROM depository_accounts WHERE account_id IN (SELECT account_id FROM accounts WHERE institution_id = %s)", (institution_id,))
-                    cur.execute("DELETE FROM credit_accounts WHERE account_id IN (SELECT account_id FROM accounts WHERE institution_id = %s)", (institution_id,))
-                    cur.execute("DELETE FROM loan_accounts WHERE account_id IN (SELECT account_id FROM accounts WHERE institution_id = %s)", (institution_id,))
-                    cur.execute("DELETE FROM investment_accounts WHERE account_id IN (SELECT account_id FROM accounts WHERE institution_id = %s)", (institution_id,))
-                    cur.execute("DELETE FROM accounts WHERE institution_id = %s", (institution_id,))
-                    cur.execute("DELETE FROM institutions WHERE id = %s", (institution_id,))
+                    
+                    # Delete transactions from current pull cycle
+                    cur.execute("""
+                        DELETE FROM transactions 
+                        WHERE account_id IN (
+                            SELECT account_id FROM accounts 
+                            WHERE institution_id = %s
+                        ) AND pull_date = %s
+                    """, (institution_id, current_pull_date))
+                    
+                    # Delete account-specific data from current pull cycle
+                    for table in ['depository_accounts', 'credit_accounts', 'loan_accounts', 'investment_accounts']:
+                        cur.execute(f"""
+                            DELETE FROM {table} 
+                            WHERE account_id IN (
+                                SELECT account_id FROM accounts 
+                                WHERE institution_id = %s AND pull_date = %s
+                            )
+                        """, (institution_id, current_pull_date))
+                    
+                    # Delete accounts from current pull cycle
+                    cur.execute("""
+                        DELETE FROM accounts 
+                        WHERE institution_id = %s AND pull_date = %s
+                    """, (institution_id, current_pull_date))
+                    
+                    # For institutions table, only delete if this is the first pull
+                    cur.execute("""
+                        DELETE FROM institutions 
+                        WHERE id = %s 
+                        AND NOT EXISTS (
+                            SELECT 1 FROM accounts 
+                            WHERE institution_id = %s AND pull_date < %s
+                        )
+                    """, (institution_id, institution_id, current_pull_date))
+                    
                     cur.execute("COMMIT")
                     
                 except Exception as cleanup_error:
