@@ -23,21 +23,31 @@ def save_accounts_to_db(accounts_dfs, conn=None, cur=None):
         if 'base' in accounts_dfs and not accounts_dfs['base'].empty:
             execute_values(cur, """
                 INSERT INTO accounts (
-                    account_id, account_name, category, group_name,
-                    last_updated_datetime, institution_id, mask,
-                    verification_status, currency, pull_date
+                    account_id, 
+                    account_name,
+                    institution_id,
+                    type,
+                    subtype,
+                    mask,
+                    verification_status,
+                    currency,
+                    last_updated_datetime,
+                    pull_date
                 ) VALUES %s
-                ON CONFLICT (account_id) DO UPDATE SET
+                ON CONFLICT (account_id) 
+                DO UPDATE SET 
                     account_name = EXCLUDED.account_name,
-                    category = EXCLUDED.category,
-                    group_name = EXCLUDED.group_name,
-                    last_updated_datetime = EXCLUDED.last_updated_datetime,
                     institution_id = EXCLUDED.institution_id,
+                    type = EXCLUDED.type,
+                    subtype = EXCLUDED.subtype,
                     mask = EXCLUDED.mask,
                     verification_status = EXCLUDED.verification_status,
                     currency = EXCLUDED.currency,
+                    last_updated_datetime = EXCLUDED.last_updated_datetime,
                     pull_date = EXCLUDED.pull_date
-            """, [tuple(x) for x in accounts_dfs['base'].values])
+            """, [tuple(x) for x in accounts_dfs['base'][['account_id', 'account_name', 'institution_id', 
+                                                         'type', 'subtype', 'mask', 'verification_status', 
+                                                         'currency', 'last_updated_datetime', 'pull_date']].values])
             saved_counts['base'] = len(accounts_dfs['base'])
 
         # Save depository accounts

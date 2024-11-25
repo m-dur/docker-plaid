@@ -27,17 +27,18 @@ CREATE TABLE institutions (
 
 
 -- Accounts
+
+
 CREATE TABLE accounts (
     account_id VARCHAR(255) PRIMARY KEY,
     account_name VARCHAR(255),
-    category VARCHAR(50),
-    group_name VARCHAR(50),
-    last_updated_datetime TIMESTAMP,
     institution_id VARCHAR(255) REFERENCES institutions(id),
+    type VARCHAR(50),
+    subtype VARCHAR(50),
     mask VARCHAR(20),
     verification_status VARCHAR(50),
     currency VARCHAR(3),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_updated_datetime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     pull_date DATE DEFAULT CURRENT_DATE
 );
 
@@ -118,9 +119,6 @@ CREATE TABLE transactions (
 
 
 -- account overrides for incorrect account types
-
-
-
 CREATE TABLE account_type_overrides (
     account_id VARCHAR(255) PRIMARY KEY,
     original_type VARCHAR(50),
