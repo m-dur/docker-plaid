@@ -120,81 +120,58 @@ def fetch_financial_data():
 @app.route('/remove_institution', methods=['POST'])
 def remove_institution():
     try:
-        institution_id = request.json.get('institution_id')
+        data = request.get_json()
+        institution_id = data.get('institution_id')
         
         if not institution_id:
-            return jsonify({'error': 'No institution_id provided'}), 400
-            
-        # 1. Get access token before removal
+            return jsonify({'error': 'Institution ID is required'}), 400
+
+        # Get access tokens
+        tokens_data = {}
         try:
             with open('access_tokens.json', 'r') as f:
                 tokens_data = json.load(f)
-                if institution_id in tokens_data:
-                    access_token = tokens_data[institution_id]['access_token']
-                    
-                    # 2. Call Plaid's item/remove endpoint
-                    client = create_plaid_client()
-                    client.item_remove(ItemRemoveRequest(access_token=access_token))
-                    
-                    # 3. Remove from local storage
-                    del tokens_data[institution_id]
-                    with open('access_tokens.json', 'w') as f:
-                        json.dump(tokens_data, f)
-        except Exception as e:
-            app.logger.error(f"Error removing Plaid access: {str(e)}")
-            return jsonify({'error': 'Failed to remove Plaid access'}), 500
-            
-        # 4. Continue with database cleanup...
+        except (FileNotFoundError, json.JSONDecodeError):
+            # If file doesn't exist or is corrupt, continue with removal
+            pass
+
+        # Get the item_id and access_token if they exist
+        institution_data = tokens_data.get(institution_id, {})
+        access_token = institution_data.get('access_token')
+        
+        # If we have an access token, try to remove from Plaid
+        if access_token:
+            try:
+                client = create_plaid_client()
+                request = ItemRemoveRequest(access_token=access_token)
+                client.item_remove(request)
+            except Exception as e:
+                print(f"Error removing item from Plaid: {e}")
+                # Continue with local removal even if Plaid removal fails
+        
+        # Remove from access_tokens.json
+        if institution_id in tokens_data:
+            del tokens_data[institution_id]
+            with open('access_tokens.json', 'w') as f:
+                json.dump(tokens_data, f)
+
+        # Remove from database
         conn = get_db_connection()
         cur = conn.cursor()
-        
         try:
-            cur.execute("BEGIN")
-            
-            # 1. Delete transactions first
-            cur.execute("""
-                DELETE FROM transactions 
-                WHERE account_id IN (
-                    SELECT account_id FROM accounts 
-                    WHERE institution_id = %s
-                )
-            """, (institution_id,))
-            
-            # 2. Delete from specialized account tables
-            for table in ['credit_accounts', 'depository_accounts', 'loan_accounts', 'investment_accounts']:
-                cur.execute(f"""
-                    DELETE FROM {table}
-                    WHERE account_id IN (
-                        SELECT account_id FROM accounts 
-                        WHERE institution_id = %s
-                    )
-                """, (institution_id,))
-            
-            # 3. Delete from accounts
-            cur.execute("""
-                DELETE FROM accounts 
-                WHERE institution_id = %s
-            """, (institution_id,))
-            
-            # 4. Finally delete the institution
-            cur.execute("""
-                DELETE FROM institutions 
-                WHERE id = %s
-            """, (institution_id,))
-            
+            # Delete related records first
+            cur.execute("DELETE FROM accounts WHERE institution_id = %s", (institution_id,))
+            cur.execute("DELETE FROM institutions WHERE id = %s", (institution_id,))
             conn.commit()
-            return jsonify({'message': 'Institution removed successfully'}), 200
-            
         except Exception as e:
             conn.rollback()
-            app.logger.error(f"Error during institution removal: {str(e)}")
-            return jsonify({'error': str(e)}), 500
+            raise e
         finally:
             cur.close()
             conn.close()
-            
+
+        return jsonify({'success': True})
     except Exception as e:
-        app.logger.error(f"Unexpected error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/data')

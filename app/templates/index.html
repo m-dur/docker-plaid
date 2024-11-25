@@ -443,6 +443,9 @@
         $('.remove-institution').on('click', function() {
             const institutionId = $(this).data('institution-id');
             if (confirm('Are you sure you want to remove this institution?')) {
+                $('.loading-overlay').css('display', 'flex');
+                $('.loading-text').text('Removing institution...');
+                
                 $.ajax({
                     url: '/remove_institution',
                     method: 'POST',
@@ -451,9 +454,16 @@
                     success: function() {
                         window.location.reload();
                     },
-                    error: function(error) {
-                        console.error('Error removing institution:', error);
-                        alert('Error removing institution. Please try again.');
+                    error: function(xhr) {
+                        $('.loading-overlay').hide();
+                        let errorMessage = 'Error removing institution. ';
+                        try {
+                            const response = JSON.parse(xhr.responseText);
+                            errorMessage += response.error || 'Please try again.';
+                        } catch (e) {
+                            errorMessage += 'Please try again.';
+                        }
+                        alert(errorMessage);
                     }
                 });
             }
