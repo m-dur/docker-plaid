@@ -46,10 +46,12 @@
             white-space: nowrap;
         }
         .amount-positive {
-            color: green;
+            color: #008800;
+            font-weight: bold;
         }
         .amount-negative {
-            color: red;
+            color: #cc0000;
+            font-weight: bold;
         }
         .edit-category {
             cursor: pointer;
@@ -94,6 +96,11 @@
         }
         .button-group {
             margin-top: 8px;
+        }
+        .edit-group {
+            cursor: pointer;
+            color: #0A85EA;
+            text-decoration: underline;
         }
     </style>
 </head>
@@ -289,25 +296,28 @@
                 url: '/api/transactions',
                 method: 'GET',
                 success: function(data) {
+                    console.log('First row data:', data[0]);
                     let tableHtml = '<table class="display"><thead><tr>';
                     if (data && data.length > 0) {
-                        Object.keys(data[0]).forEach(key => {
+                        // Reorder keys to put account_name first
+                        const orderedKeys = ['account_name', ...Object.keys(data[0]).filter(key => key !== 'account_name')];
+                        orderedKeys.forEach(key => {
                             tableHtml += `<th>${key}</th>`;
                         });
                         tableHtml += '</tr></thead><tbody>';
                         
                         data.forEach(row => {
                             tableHtml += '<tr>';
-                            Object.entries(row).forEach(([key, value]) => {
+                            orderedKeys.forEach(key => {
                                 if (key === 'category') {
-                                    tableHtml += `<td>${createCategoryCell(row.transaction_id, value, row.name)}</td>`;
+                                    tableHtml += `<td>${createCategoryCell(row.transaction_id, row[key], row.name)}</td>`;
                                 } else if (key === 'amount') {
-                                    const amountClass = value < 0 ? 'amount-negative' : 'amount-positive';
-                                    tableHtml += `<td class="${amountClass}">$${Math.abs(value).toFixed(2)}</td>`;
+                                    const amountClass = parseFloat(row[key]) < 0 ? 'amount-negative' : 'amount-positive';
+                                    tableHtml += `<td class="${amountClass}">$${Math.abs(parseFloat(row[key])).toFixed(2)}</td>`;
                                 } else if (key === 'group_name') {
-                                    tableHtml += `<td>${createGroupCell(row.transaction_id, value, row.name)}</td>`;
+                                    tableHtml += `<td>${createGroupCell(row.transaction_id, row[key], row.name)}</td>`;
                                 } else {
-                                    tableHtml += `<td>${value === null ? '<span class="null-value">NULL</span>' : value}</td>`;
+                                    tableHtml += `<td>${row[key] === null ? '<span class="null-value">NULL</span>' : row[key]}</td>`;
                                 }
                             });
                             tableHtml += '</tr>';

@@ -17,6 +17,7 @@ from config import Config
 from financial_data.utils.db_connection import get_db_connection
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
 from plaid.model.item_remove_request import ItemRemoveRequest
+from psycopg2.extras import RealDictCursor
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'  # Change this to a secure random key
@@ -220,27 +221,25 @@ def data():
 
 @app.route('/api/transactions')
 def get_transactions():
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        
-        query = """
+        cur.execute("""
             SELECT 
-                *
-            FROM transactions
-        """
-        
-        cursor.execute(query)
-        transactions = [dict(tx) for tx in cursor.fetchall()]
-        
-        cursor.close()
-        conn.close()
-        
+                t.*,
+                a.account_name
+            FROM transactions t
+            LEFT JOIN accounts a ON t.account_id = a.account_id
+            ORDER BY t.date DESC
+        """)
+        transactions = cur.fetchall()
         return jsonify(transactions)
-        
     except Exception as e:
-        app.logger.error(f"Error fetching transactions: {str(e)}")
         return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
 
 @app.route('/api/run_query', methods=['POST'])
 def run_query():
