@@ -253,7 +253,6 @@
     <h1>Financial Data Fetcher</h1>
     <a href="/data" class="nav-link">View Data</a>
     <a href="/transactions" class="nav-link">View Transactions</a>
-    <a href="/accounts" class="nav-link">Manage Accounts</a>
     {% if institutions %}
     <div class="institutions-list">
         <h3>Connected Institutions:</h3>
@@ -294,7 +293,6 @@
                         <div class="metadata-item">
                             <span class="label">Connected Accounts</span>
                             <span class="value" id="account-count-{{ institution.id }}">Loading...</span>
-                            <a href="/accounts" class="nav-link">Manage Account Types</a>
                         </div>
                         <div class="metadata-item">
                             <span class="label">Total Transactions</span>

@@ -30,12 +30,6 @@ def process_accounts(accounts, bank_balances, credit_cards=None, item_info=None)
             except Exception as e:
                 print(f"Error processing credit card {card.account_id}: {e}")
     
-    # Get account type overrides
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT account_name, override_type, override_subtype FROM account_type_overrides")
-            overrides = {row[0]: {'type': row[1], 'subtype': row[2]} for row in cur.fetchall()}
-    
     #print("\nDebug - Account Types Processing:")
     for account in accounts:
         # Get balance info
