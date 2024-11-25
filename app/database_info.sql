@@ -8,6 +8,8 @@ select * from investment_accounts;
 select * from loan_accounts;
 select * from institutions;
 select * from account_type_overrides;
+select * from category_mappings;
+select * from group_mappings;
 
 
 -- Table Creation
@@ -120,15 +122,14 @@ CREATE TABLE transactions (
 
 -- account overrides for incorrect account types
 CREATE TABLE account_type_overrides (
-    account_id VARCHAR(255) PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
+    account_name VARCHAR(255) NOT NULL UNIQUE,
     original_type VARCHAR(50),
     original_subtype VARCHAR(50),
     override_type VARCHAR(50),
     override_subtype VARCHAR(50),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
-
 
 
 

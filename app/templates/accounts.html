@@ -197,6 +197,7 @@
             
             // Get the current values from both columns
             const parentRow = container.closest('tr');
+            const accountName = parentRow.querySelector('td:nth-child(1)').textContent;
             const currentType = parentRow.querySelector('td:nth-child(2) .type-text')?.textContent || '';
             const currentSubtype = parentRow.querySelector('td:nth-child(3) .type-text')?.textContent || '';
             
@@ -215,6 +216,7 @@
                 },
                 body: JSON.stringify({
                     account_id: accountId,
+                    account_name: accountName,
                     type: newType,
                     subtype: newSubtype
                 }),

@@ -585,7 +585,7 @@ def get_all_accounts():
         cur.execute("""
             SELECT a.*, ato.override_type, ato.override_subtype 
             FROM accounts a
-            LEFT JOIN account_type_overrides ato ON a.account_id = ato.account_id
+            LEFT JOIN account_type_overrides ato ON a.account_name = ato.account_name
             ORDER BY a.account_name
         """)
         accounts = cur.fetchall()
@@ -609,16 +609,16 @@ def update_account_type():
         
         cur.execute("""
             INSERT INTO account_type_overrides 
-            (account_id, original_type, original_subtype, override_type, override_subtype)
+            (account_name, original_type, original_subtype, override_type, override_subtype)
             SELECT 
-                %(account_id)s,
+                account_name,
                 type,
                 subtype,
                 %(new_type)s,
                 %(new_subtype)s
             FROM accounts 
             WHERE account_id = %(account_id)s
-            ON CONFLICT (account_id) DO UPDATE
+            ON CONFLICT (account_name) DO UPDATE
             SET 
                 override_type = EXCLUDED.override_type,
                 override_subtype = EXCLUDED.override_subtype

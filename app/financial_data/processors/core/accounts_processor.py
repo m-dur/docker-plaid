@@ -33,7 +33,7 @@ def process_accounts(accounts, bank_balances, credit_cards=None, item_info=None)
     # Get account type overrides
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT account_id, override_type, override_subtype FROM account_type_overrides")
+            cur.execute("SELECT account_name, override_type, override_subtype FROM account_type_overrides")
             overrides = {row[0]: {'type': row[1], 'subtype': row[2]} for row in cur.fetchall()}
     
     #print("\nDebug - Account Types Processing:")
