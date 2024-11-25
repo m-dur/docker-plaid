@@ -104,19 +104,26 @@ def create_plaid_client():
     secret = Config.PLAID_SECRET
     environment = Config.PLAID_ENV
 
-    #print(f"Client ID type: {type(client_id)}, Secret type: {type(secret)}, Environment: {environment}")
-
     if not all([client_id, secret, environment]):
         raise ValueError("Missing Plaid configuration. Please check your .env file.")
 
+    # Map environment string to Plaid environment
+    plaid_env_map = {
+        'sandbox': plaid.Environment.Sandbox,
+        'production': plaid.Environment.Production
+    }
+
+    if environment.lower() not in plaid_env_map:
+        raise ValueError(f"Invalid PLAID_ENV value: {environment}. Must be one of: {', '.join(plaid_env_map.keys())}")
+
     configuration = Configuration(
-        host=environment,
+        host=plaid_env_map[environment.lower()],
         api_key={
             'clientId': str(client_id),
             'secret': str(secret),
         }
     )
-    #print(f"Plaid configuration created with host: {environment}")
+
     api_client = ApiClient(configuration)
     return plaid_api.PlaidApi(api_client)
 
