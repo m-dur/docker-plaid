@@ -26,7 +26,18 @@ class FinancialDataHandler:
             conn = get_db_connection()
             cur = conn.cursor()
             should_close = True
-            cur.execute("BEGIN")
+        
+        # Initialize results dictionary
+        results = {
+            'success': False,
+            'transactions': {
+                'db_saved': False,
+                'count': 0,
+                'added': 0,
+                'modified': 0,
+                'removed': 0
+            }
+        }
         
         try:
             # 2. Get and save institution info
@@ -94,19 +105,17 @@ class FinancialDataHandler:
             # Commit all changes
             conn.commit()
             
-            return True
+            results['success'] = True
+            return results
             
         except Exception as e:
             if should_close:
-                cur.execute("ROLLBACK")
+                conn.rollback()
             raise e
         
         finally:
-            if should_close:
-                if cur:
-                    cur.close()
-                if conn:
-                    conn.close()
+            if should_close and conn:
+                conn.close()
 
     def process_transaction_updates(self, access_token):
         """Handle only transaction updates from webhook"""

@@ -152,14 +152,13 @@ def remove_institution():
             with open('access_tokens.json', 'r') as f:
                 tokens_data = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
-            # If file doesn't exist or is corrupt, continue with removal
             pass
 
-        # Get the item_id and access_token if they exist
+        # Get the access_token if it exists
         institution_data = tokens_data.get(institution_id, {})
         access_token = institution_data.get('access_token')
         
-        # If we have an access token, try to remove from Plaid
+        # Remove from Plaid if we have an access token
         if access_token:
             try:
                 client = create_plaid_client()
@@ -167,30 +166,47 @@ def remove_institution():
                 client.item_remove(plaid_request)
             except Exception as e:
                 print(f"Error removing item from Plaid: {e}")
-                # Continue with local removal even if Plaid removal fails
-        
-        # Remove from access_tokens.json
-        if institution_id in tokens_data:
-            del tokens_data[institution_id]
-            with open('access_tokens.json', 'w') as f:
-                json.dump(tokens_data, f)
 
-        # Remove from database
+        # Remove from database in correct order
         conn = get_db_connection()
         cur = conn.cursor()
         try:
-            # Delete related records first
+            cur.execute("BEGIN")
+            
+            # Get all account IDs for this institution
+            cur.execute("SELECT account_id FROM accounts WHERE institution_id = %s", (institution_id,))
+            account_ids = [row[0] for row in cur.fetchall()]
+            
+            # Delete from all related tables in correct order
+            for account_id in account_ids:
+                cur.execute("DELETE FROM transactions WHERE account_id = %s", (account_id,))
+                cur.execute("DELETE FROM depository_accounts WHERE account_id = %s", (account_id,))
+                cur.execute("DELETE FROM credit_accounts WHERE account_id = %s", (account_id,))
+                cur.execute("DELETE FROM loan_accounts WHERE account_id = %s", (account_id,))
+                cur.execute("DELETE FROM investment_accounts WHERE account_id = %s", (account_id,))
+            
+            # Now safe to delete from accounts
             cur.execute("DELETE FROM accounts WHERE institution_id = %s", (institution_id,))
+            
+            # Finally delete the institution
             cur.execute("DELETE FROM institutions WHERE id = %s", (institution_id,))
-            conn.commit()
+            
+            # Remove from access_tokens.json
+            if institution_id in tokens_data:
+                del tokens_data[institution_id]
+                with open('access_tokens.json', 'w') as f:
+                    json.dump(tokens_data, f)
+            
+            cur.execute("COMMIT")
+            return jsonify({'success': True}), 200
+            
         except Exception as e:
-            conn.rollback()
+            cur.execute("ROLLBACK")
             raise e
         finally:
             cur.close()
             conn.close()
-
-        return jsonify({'success': True})
+            
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

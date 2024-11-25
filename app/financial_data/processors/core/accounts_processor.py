@@ -57,8 +57,8 @@ def process_accounts(accounts, bank_balances, credit_cards=None, item_info=None)
             'account_id': str(account.account_id),
             'account_name': str(account.name)[:255],
             'last_updated_datetime': datetime.now(),
-            '_account_type': account_type,  # Temporary field
-            '_subtype': sub_type,          # Temporary field
+            'category': None,  # Replace account_type
+            'group_name': None,  # Replace subtype
             'institution_id': item_info.get('institution_id') if item_info else None,
             'mask': str(getattr(account, 'mask', ''))[:20],
             'verification_status': str(getattr(account, 'verification_status', ''))[:50],

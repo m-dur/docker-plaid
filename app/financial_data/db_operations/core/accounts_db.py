@@ -21,7 +21,6 @@ def save_accounts_to_db(accounts_dfs, conn=None, cur=None):
     try:
         # Save base account records
         if 'base' in accounts_dfs and not accounts_dfs['base'].empty:
-            base_records = [tuple(x) for x in accounts_dfs['base'].values]
             execute_values(cur, """
                 INSERT INTO accounts (
                     account_id, account_name, category, group_name,
@@ -30,14 +29,16 @@ def save_accounts_to_db(accounts_dfs, conn=None, cur=None):
                 ) VALUES %s
                 ON CONFLICT (account_id) DO UPDATE SET
                     account_name = EXCLUDED.account_name,
+                    category = EXCLUDED.category,
+                    group_name = EXCLUDED.group_name,
                     last_updated_datetime = EXCLUDED.last_updated_datetime,
                     institution_id = EXCLUDED.institution_id,
                     mask = EXCLUDED.mask,
                     verification_status = EXCLUDED.verification_status,
                     currency = EXCLUDED.currency,
                     pull_date = EXCLUDED.pull_date
-            """, base_records)
-            saved_counts['base'] = len(base_records)
+            """, [tuple(x) for x in accounts_dfs['base'].values])
+            saved_counts['base'] = len(accounts_dfs['base'])
 
         # Save depository accounts
         if not accounts_dfs['depository'].empty:
