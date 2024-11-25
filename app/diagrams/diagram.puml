@@ -12,6 +12,8 @@ skinparam component {
 package "Web Application" {
   [app.py] as App
   [templates/index.html] as UI
+  [templates/transactions.html] as TransactionsUI
+  [templates/data.html] as DataUI
   [db_schema.py] as SchemaGen
 }
 

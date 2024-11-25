@@ -53,12 +53,22 @@ class institutions <<reference>> {
     status: varchar
     billed_products: text
     created_at: timestamp
+    last_refresh: timestamp
+    last_credit_pull: timestamp
+    connected_on: timestamp
 }
 
 class category_mappings <<reference>> {
     + transaction_name: varchar <<PK>>
     category: varchar
+    group_name: varchar
     last_updated: timestamp
+}
+
+class group_mappings <<reference>> {
+    + group_name: varchar <<PK>>
+    description: varchar
+    created_at: timestamp
 }
 
 ' Transaction tables
