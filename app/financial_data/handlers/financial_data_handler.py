@@ -20,33 +20,15 @@ class FinancialDataHandler:
     def __init__(self):
         pass
 
-    def fetch_and_process_financial_data(self, access_token, item_info=None):
-        results = {
-            'institutions': {'db_saved': False},
-            'accounts': {
-                'db_saved': False,
-                'depository_updated': 0,
-                'credit_updated': 0,
-                'loan_updated': 0,
-                'investment_updated': 0
-            },
-            'transactions': {
-                'db_saved': False,
-                'count': 0,
-                'added': 0,
-                'modified': 0,
-                'removed': 0
-            }
-        }
-        
-        # Single database connection for entire operation
-        conn = get_db_connection()
-        cur = conn.cursor()
+    def fetch_and_process_financial_data(self, access_token, conn=None, cur=None, item_info=None):
+        should_close = False
+        if conn is None or cur is None:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            should_close = True
+            cur.execute("BEGIN")
         
         try:
-            # Start transaction
-            cur.execute("BEGIN")
-            
             # 2. Get and save institution info
             if not item_info:
                 item_info = get_item(access_token)
@@ -112,15 +94,19 @@ class FinancialDataHandler:
             # Commit all changes
             conn.commit()
             
-            return results
+            return True
             
         except Exception as e:
-            print(f"Error in fetch_and_process_financial_data: {str(e)}")
-            conn.rollback()
-            raise
+            if should_close:
+                cur.execute("ROLLBACK")
+            raise e
+        
         finally:
-            cur.close()
-            conn.close()
+            if should_close:
+                if cur:
+                    cur.close()
+                if conn:
+                    conn.close()
 
     def process_transaction_updates(self, access_token):
         """Handle only transaction updates from webhook"""

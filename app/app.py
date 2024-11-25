@@ -52,7 +52,13 @@ def index():
 
 @app.route('/exchange_public_token', methods=['POST'])
 def exchange_public_token():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
     try:
+        # Start transaction
+        cur.execute("BEGIN")
+        
         public_token = request.json['public_token']
         institution_id = request.json['metadata']['institution']['institution_id']
         
@@ -62,31 +68,45 @@ def exchange_public_token():
         )
         access_token = exchange_response['access_token']
         
+        # Get institution info before saving anything
         institution_info = get_institution_info(access_token)
         
-        try:
-            with open('access_tokens.json', 'r') as f:
-                tokens_data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            tokens_data = {}
-        
-        tokens_data[institution_id] = {
-            'access_token': access_token,
-            'institution_id': institution_id,
-            'institution_name': request.json['metadata']['institution']['name']
-        }
-        
-        with open('access_tokens.json', 'w') as f:
-            json.dump(tokens_data, f)
-            
+        # Process financial data with transaction support
         handler = FinancialDataHandler()
-        handler.fetch_and_process_financial_data(access_token)
+        success = handler.fetch_and_process_financial_data(access_token, conn=conn, cur=cur)
         
-        return jsonify({'message': 'Account linked and initial data fetched successfully'}), 200
-        
+        if success:
+            # Only save access token if everything else succeeded
+            tokens_data = {}
+            try:
+                with open('access_tokens.json', 'r') as f:
+                    tokens_data = json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                tokens_data = {}
+            
+            tokens_data[institution_id] = {
+                'access_token': access_token,
+                'institution_id': institution_id,
+                'institution_name': request.json['metadata']['institution']['name']
+            }
+            
+            with open('access_tokens.json', 'w') as f:
+                json.dump(tokens_data, f)
+            
+            # Commit transaction only if everything succeeded
+            cur.execute("COMMIT")
+            return jsonify({'message': 'Account linked and initial data fetched successfully'}), 200
+        else:
+            raise Exception("Failed to process financial data")
+            
     except Exception as e:
+        # Roll back transaction and clean up on any error
+        cur.execute("ROLLBACK")
         app.logger.error(f"Error in exchange_public_token: {str(e)}")
         return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
 
 @app.route('/fetch_financial_data', methods=['POST'])
 def fetch_financial_data():
@@ -143,8 +163,8 @@ def remove_institution():
         if access_token:
             try:
                 client = create_plaid_client()
-                request = ItemRemoveRequest(access_token=access_token)
-                client.item_remove(request)
+                plaid_request = ItemRemoveRequest(access_token=access_token)
+                client.item_remove(plaid_request)
             except Exception as e:
                 print(f"Error removing item from Plaid: {e}")
                 # Continue with local removal even if Plaid removal fails

@@ -15,69 +15,29 @@ def save_accounts_to_db(accounts_dfs, conn=None, cur=None):
         'depository': 0,
         'credit': 0,
         'loan': 0,
-        'investment': 0,
-        'account_types': 0
+        'investment': 0
     }
     
     try:
-        # First save account types and get their IDs
-        if 'account_types' in accounts_dfs and not accounts_dfs['account_types'].empty:
-            #pprint("\nDebug - Saving account types:")
-            account_types_query = """
-                INSERT INTO account_types (account_type, subtype, status)
-                VALUES %s
-                ON CONFLICT (account_type, subtype) 
-                DO UPDATE SET 
-                    status = EXCLUDED.status
-                RETURNING id, account_type, subtype;
-            """
-            execute_values(cur, account_types_query, [tuple(x) for x in accounts_dfs['account_types'].values])
-            type_mappings = cur.fetchall()
-            
-            # Create lookup dictionary
-            type_id_lookup = {(t[1], t[2]): t[0] for t in type_mappings}
-            
-            # Update base records with account_type_ids
-            base_df = accounts_dfs['base'].copy()
-            
-            # Add account_type_id column
-            base_df['account_type_id'] = base_df.apply(
-                lambda x: type_id_lookup.get((x['_account_type'], x['_subtype'])), 
-                axis=1
-            )
-            
-            # Select only the columns we need in the correct order
-            base_df = base_df[[
-                'account_id',
-                'account_name',
-                'last_updated_datetime',
-                'account_type_id',
-                'institution_id',
-                'mask',
-                'verification_status',
-                'currency',
-                'pull_date'
-            ]]
-            
-            # Save base accounts
-            base_query = """
+        # Save base account records
+        if 'base' in accounts_dfs and not accounts_dfs['base'].empty:
+            base_records = [tuple(x) for x in accounts_dfs['base'].values]
+            execute_values(cur, """
                 INSERT INTO accounts (
-                    account_id, account_name, last_updated_datetime, account_type_id,
-                    institution_id, mask, verification_status, currency, pull_date
+                    account_id, account_name, category, group_name,
+                    last_updated_datetime, institution_id, mask,
+                    verification_status, currency, pull_date
                 ) VALUES %s
-                ON CONFLICT (account_id) 
-                DO UPDATE SET 
+                ON CONFLICT (account_id) DO UPDATE SET
                     account_name = EXCLUDED.account_name,
                     last_updated_datetime = EXCLUDED.last_updated_datetime,
-                    account_type_id = EXCLUDED.account_type_id,
                     institution_id = EXCLUDED.institution_id,
                     mask = EXCLUDED.mask,
                     verification_status = EXCLUDED.verification_status,
                     currency = EXCLUDED.currency,
                     pull_date = EXCLUDED.pull_date
-            """
-            execute_values(cur, base_query, [tuple(x) for x in base_df.values])
-            saved_counts['base'] = len(base_df)
+            """, base_records)
+            saved_counts['base'] = len(base_records)
 
         # Save depository accounts
         if not accounts_dfs['depository'].empty:

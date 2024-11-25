@@ -2,39 +2,27 @@
 select * from transactions;
 select * from category_mappings;
 select * from accounts;
-select * from account_types;
 select * from depository_accounts;
 select * from credit_accounts;
 select * from investment_accounts;
 select * from loan_accounts;
 select * from institutions;
+select * from account_type_overrides;
+
 
 -- Table Creation
--- Transactions
-CREATE TABLE transactions (
-    transaction_id VARCHAR(255) PRIMARY KEY,
-    account_id VARCHAR(255) REFERENCES accounts(account_id),
-    amount DECIMAL(12,2),
-    date DATE,
-    name VARCHAR(255),
-    category VARCHAR(255),
-    group_name VARCHAR(255),
-    merchant_name VARCHAR(255),
-    payment_channel VARCHAR(50),
-    authorized_datetime TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    pull_date DATE DEFAULT CURRENT_DATE
-);
--- indexed for transactions
-CREATE INDEX idx_transactions_account ON transactions(account_id);
-CREATE INDEX idx_transactions_date ON transactions(date);
-CREATE INDEX idx_transactions_pull_date ON transactions(pull_date);
 
--- Category Mappings
-CREATE TABLE category_mappings (
-    transaction_name VARCHAR(255) PRIMARY KEY,
-    category VARCHAR(255),
-    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- institutions
+CREATE TABLE institutions (
+    id VARCHAR(255) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    url VARCHAR(255),
+    oauth BOOLEAN DEFAULT FALSE,
+    refresh_interval VARCHAR(50),
+    type TEXT,
+    status VARCHAR(50),
+    billed_products TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 
@@ -42,9 +30,10 @@ CREATE TABLE category_mappings (
 CREATE TABLE accounts (
     account_id VARCHAR(255) PRIMARY KEY,
     account_name VARCHAR(255),
+    category VARCHAR(50),
+    group_name VARCHAR(50),
     last_updated_datetime TIMESTAMP,
-    account_type_id INTEGER REFERENCES account_types(id),
-    institution_id VARCHAR(255) REFERENCES institutions(id),  -- Changed to VARCHAR to match institutions table
+    institution_id VARCHAR(255) REFERENCES institutions(id),
     mask VARCHAR(20),
     verification_status VARCHAR(50),
     currency VARCHAR(3),
@@ -52,20 +41,15 @@ CREATE TABLE accounts (
     pull_date DATE DEFAULT CURRENT_DATE
 );
 
--- account indexes
-CREATE INDEX idx_accounts_type_id ON accounts(account_type_id);
-CREATE INDEX idx_accounts_institution ON accounts(institution_id);
-CREATE INDEX idx_accounts_pull_date ON accounts(pull_date);
-
--- Account Types
- CREATE TABLE account_types (
-    id SERIAL PRIMARY KEY,
-    account_type VARCHAR(50),
-    subtype VARCHAR(50),
-    status VARCHAR(20),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(account_type, subtype)
+-- loan accounts
+CREATE TABLE loan_accounts (
+    account_id VARCHAR(255) PRIMARY KEY REFERENCES accounts(account_id),
+    balance_current DECIMAL(12,2),
+    original_loan_amount DECIMAL(12,2),
+    interest_rate DECIMAL(6,3),
+    pull_date DATE DEFAULT CURRENT_DATE
 );
+
 
 -- Depository Accounts 
 CREATE TABLE depository_accounts (
@@ -93,9 +77,6 @@ CREATE TABLE credit_accounts (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Credit accounts indexes
-CREATE INDEX idx_credit_accounts_pull_date ON credit_accounts(pull_date); 
-
 -- Investment Accounts
 CREATE TABLE investment_accounts (
     account_id VARCHAR(255) PRIMARY KEY REFERENCES accounts(account_id),
@@ -103,30 +84,53 @@ CREATE TABLE investment_accounts (
     pull_date DATE DEFAULT CURRENT_DATE
 );
 
--- indexes
-CREATE INDEX idx_depository_pull_date ON depository_accounts(pull_date);
-CREATE INDEX idx_credit_pull_date ON credit_accounts(pull_date);
-CREATE INDEX idx_loan_pull_date ON loan_accounts(pull_date);
-CREATE INDEX idx_investment_pull_date ON investment_accounts(pull_date);
 
--- Loan Accounts
-CREATE TABLE loan_accounts (
-    account_id VARCHAR(255) PRIMARY KEY REFERENCES accounts(account_id),
-    balance_current DECIMAL(12,2),
-    original_loan_amount DECIMAL(12,2),
-    interest_rate DECIMAL(6,3),
+-- Category Mappings
+CREATE TABLE category_mappings (
+    transaction_name VARCHAR(255) PRIMARY KEY,
+    category VARCHAR(255),
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- group mappings 
+CREATE TABLE group_mappings (
+    transaction_name VARCHAR(255) PRIMARY KEY,
+    group_name VARCHAR(255),
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Transactions
+CREATE TABLE transactions (
+    transaction_id VARCHAR(255) PRIMARY KEY,
+    account_id VARCHAR(255) REFERENCES accounts(account_id),
+    amount DECIMAL(12,2),
+    date DATE,
+    name VARCHAR(255),
+    category VARCHAR(255),
+    group_name VARCHAR(255),
+    merchant_name VARCHAR(255),
+    payment_channel VARCHAR(50),
+    authorized_datetime TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     pull_date DATE DEFAULT CURRENT_DATE
 );
 
--- institutions
-CREATE TABLE institutions (
-    id VARCHAR(255) PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    url VARCHAR(255),
-    oauth BOOLEAN DEFAULT FALSE,
-    refresh_interval VARCHAR(50),
-    type TEXT,
-    status VARCHAR(50),
-    billed_products TEXT,
+
+-- account overrides for incorrect account types
+
+
+
+CREATE TABLE account_type_overrides (
+    account_id VARCHAR(255) PRIMARY KEY,
+    original_type VARCHAR(50),
+    original_subtype VARCHAR(50),
+    override_type VARCHAR(50),
+    override_subtype VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+
+
+
+
