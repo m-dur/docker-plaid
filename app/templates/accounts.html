@@ -63,6 +63,45 @@
             color: white;
             border: none !important;
         }
+        .type-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .type-text, .subtype-text {
+            font-size: 0.9em;
+        }
+        .type-edit select {
+            margin-bottom: 8px;
+            padding: 4px;
+            width: 200px;
+        }
+        .type-input, .subtype-input {
+            display: block;
+        }
+        .type-edit label {
+            display: block;
+            margin-top: 8px;
+            margin-bottom: 4px;
+            font-weight: bold;
+        }
+        .type-edit select {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .type-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin-right: 12px;
+        }
+        .type-text, .subtype-text {
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
     </style>
 </head>
 <body>
@@ -76,43 +115,98 @@
     </div>
 
     <script>
-        function createTypeCell(accountId, currentType, currentSubtype) {
+        function createTypeCell(accountId, currentValue, fieldType) {
             return `
                 <div class="type-display">
-                    <span class="type-text">${currentType || 'N/A'}</span>
-                    <span class="subtype-text">${currentSubtype || 'N/A'}</span>
-                    <a class="edit-type" onclick="editType(this, '${accountId}', '${currentType}', '${currentSubtype}')">✏️</a>
+                    <span class="type-text">${currentValue || 'N/A'}</span>
+                    <a class="edit-type" onclick="editType(this, '${accountId}', '${currentValue}', '${fieldType}')">✏️</a>
                 </div>
             `;
         }
 
-        function editType(element, accountId, currentType, currentSubtype) {
+        function editType(element, accountId, currentValue, fieldType) {
             const container = element.closest('.type-display');
             const input = document.createElement('div');
             input.className = 'type-edit';
             
-            input.innerHTML = `
-                <div>
-                    <select class="type-input">
-                        <option value="depository" ${currentType === 'depository' ? 'selected' : ''}>Depository</option>
-                        <option value="credit" ${currentType === 'credit' ? 'selected' : ''}>Credit</option>
-                        <option value="loan" ${currentType === 'loan' ? 'selected' : ''}>Loan</option>
-                        <option value="investment" ${currentType === 'investment' ? 'selected' : ''}>Investment</option>
-                    </select>
-                    <input type="text" class="subtype-input" value="${currentSubtype || ''}" placeholder="Subtype" />
-                    <div class="button-group">
-                        <button class="save-type" onclick="saveType(this, '${accountId}')">Save</button>
-                        <button class="cancel-edit" onclick="cancelEdit(this, '${accountId}', '${currentType}', '${currentSubtype}')">Cancel</button>
+            const subtypeOptions = {
+                depository: ['checking', 'savings', 'cd', 'money market', 'paypal', 'prepaid', 'cash management', 'hsa'],
+                credit: ['credit card', 'paypal'],
+                loan: ['auto', 'commercial', 'construction', 'consumer', 'home equity', 'mortgage', 'line of credit', 'student'],
+                investment: ['401k', 'ira', 'brokerage', 'mutual fund', 'pension', 'retirement', 'roth', 'trust']
+            };
+
+            if (fieldType === 'type') {
+                input.innerHTML = `
+                    <div>
+                        <select class="type-input">
+                            <option value="depository" ${currentValue === 'depository' ? 'selected' : ''}>Depository</option>
+                            <option value="credit" ${currentValue === 'credit' ? 'selected' : ''}>Credit</option>
+                            <option value="loan" ${currentValue === 'loan' ? 'selected' : ''}>Loan</option>
+                            <option value="investment" ${currentValue === 'investment' ? 'selected' : ''}>Investment</option>
+                        </select>
+                        <div class="button-group">
+                            <button class="save-type" onclick="saveType(this, '${accountId}', '${fieldType}')">Save</button>
+                            <button class="cancel-edit" onclick="cancelEdit(this, '${accountId}', '${currentValue}', '${fieldType}')">Cancel</button>
+                        </div>
                     </div>
-                </div>
-            `;
+                `;
+            } else {
+                const parentRow = container.closest('tr');
+                const currentType = parentRow.querySelector('td:nth-child(2) .type-text').textContent;
+                
+                input.innerHTML = `
+                    <div>
+                        <select class="subtype-input">
+                            ${getSubtypeOptions(currentType, currentValue, subtypeOptions)}
+                        </select>
+                        <div class="button-group">
+                            <button class="save-type" onclick="saveType(this, '${accountId}', '${fieldType}')">Save</button>
+                            <button class="cancel-edit" onclick="cancelEdit(this, '${accountId}', '${currentValue}', '${fieldType}')">Cancel</button>
+                        </div>
+                    </div>
+                `;
+            }
             container.replaceWith(input);
         }
 
-        function saveType(element, accountId) {
+        function getSubtypeOptions(type, currentSubtype, subtypeOptions) {
+            if (!type || !subtypeOptions[type]) return '<option value="">Select subtype</option>';
+            
+            return subtypeOptions[type]
+                .map(subtype => `<option value="${subtype}" ${currentSubtype === subtype ? 'selected' : ''}>${subtype}</option>`)
+                .join('');
+        }
+
+        function updateSubtypeOptions(typeSelect) {
+            const subtypeSelect = typeSelect.nextElementSibling;
+            const selectedType = typeSelect.value;
+            const subtypeOptions = {
+                depository: ['checking', 'savings', 'cd', 'money market', 'paypal', 'prepaid'],
+                credit: ['credit card', 'paypal'],
+                loan: ['auto', 'commercial', 'construction', 'consumer', 'home equity', 'mortgage', 'line of credit', 'student'],
+                investment: ['529', '401a', '401k', '403b', '457b', 'brokerage', 'cash isa', 'education savings account', 'gic', 'health reimbursement arrangement', 'hsa', 'ira', 'isa', 'keogh', 'lif', 'lira', 'lrif', 'lrsp', 'mutual fund', 'non-taxable brokerage account', 'other', 'pension', 'prif', 'profit sharing plan', 'rdsp', 'resp', 'retirement', 'rlif', 'roth', 'roth 401k', 'rrif', 'rrsp', 'sarsep', 'sep ira', 'simple ira', 'sipp', 'stock plan', 'tfsa', 'trust', 'ugma', 'utma']
+            };
+            
+            subtypeSelect.innerHTML = getSubtypeOptions(selectedType, '', subtypeOptions);
+        }
+
+        function saveType(element, accountId, fieldType) {
             const container = element.closest('.type-edit');
-            const newType = container.querySelector('.type-input').value;
-            const newSubtype = container.querySelector('.subtype-input').value;
+            let newType, newSubtype;
+            
+            // Get the current values from both columns
+            const parentRow = container.closest('tr');
+            const currentType = parentRow.querySelector('td:nth-child(2) .type-text')?.textContent || '';
+            const currentSubtype = parentRow.querySelector('td:nth-child(3) .type-text')?.textContent || '';
+            
+            if (fieldType === 'type') {
+                newType = container.querySelector('.type-input').value;
+                newSubtype = currentSubtype;
+            } else {
+                newType = currentType;
+                newSubtype = container.querySelector('.subtype-input').value;
+            }
             
             fetch('/api/accounts/update_type', {
                 method: 'POST',
@@ -125,17 +219,32 @@
                     subtype: newSubtype
                 }),
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
             .then(data => {
                 if (data.success) {
-                    container.replaceWith(createTypeCell(accountId, newType, newSubtype));
+                    const newCell = document.createElement('div');
+                    newCell.innerHTML = createTypeCell(accountId, fieldType === 'type' ? newType : newSubtype, fieldType);
+                    container.replaceWith(newCell.firstElementChild);
+                } else {
+                    alert('Error updating type: ' + (data.error || 'Unknown error'));
                 }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error updating type: ' + error.message);
             });
         }
 
-        function cancelEdit(element, accountId, currentType, currentSubtype) {
+        function cancelEdit(element, accountId, currentValue, fieldType) {
             const container = element.closest('.type-edit');
-            container.replaceWith(createTypeCell(accountId, currentType, currentSubtype));
+            const newCell = document.createElement('div');
+            newCell.innerHTML = createTypeCell(accountId, currentValue, fieldType);
+            container.replaceWith(newCell.firstElementChild);
         }
 
         // Load accounts data
@@ -148,6 +257,7 @@
                         <tr>
                             <th>Account Name</th>
                             <th>Type</th>
+                            <th>Subtype</th>
                             <th>Mask</th>
                             <th>Status</th>
                         </tr>
@@ -159,7 +269,12 @@
                                 <td>${createTypeCell(
                                     account.account_id, 
                                     account.override_type || account.type,
-                                    account.override_subtype || account.subtype
+                                    'type'
+                                )}</td>
+                                <td>${createTypeCell(
+                                    account.account_id,
+                                    account.override_subtype || account.subtype,
+                                    'subtype'
                                 )}</td>
                                 <td>${account.mask || 'N/A'}</td>
                                 <td>${account.verification_status || 'N/A'}</td>
