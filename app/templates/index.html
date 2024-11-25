@@ -298,6 +298,10 @@
                             <span class="label">Total Transactions</span>
                             <span class="value" id="transaction-count-{{ institution.id }}">Loading...</span>
                         </div>
+                        <div class="metadata-item">
+                            <span class="label">Uncategorized Transactions</span>
+                            <span class="value" id="uncategorized-count-{{ institution.id }}">Loading...</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -517,11 +521,21 @@
                   formatNumber(data.metadata.connectedAccounts);
               document.getElementById(`transaction-count-${institutionId}`).textContent = 
                   formatNumber(data.metadata.totalTransactions);
+              document.getElementById(`uncategorized-count-${institutionId}`).textContent = 
+                  formatNumber(data.metadata.uncategorizedTransactions);
           })
           .catch(error => {
               console.error('Error:', error);
               // Set error state for all fields
-              const fields = ['last-transaction', 'last-refresh', 'last-credit', 'connected-on', 'account-count', 'transaction-count'];
+              const fields = [
+                  'last-transaction', 
+                  'last-refresh', 
+                  'last-credit', 
+                  'connected-on', 
+                  'account-count', 
+                  'transaction-count',
+                  'uncategorized-count'
+              ];
               fields.forEach(field => {
                   document.getElementById(`${field}-${institutionId}`).textContent = 'Error';
               });

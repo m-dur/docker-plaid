@@ -389,18 +389,26 @@ def get_institution_metadata(institution_id):
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         
-        # Get institution info
+        # Get institution info and basic counts
         cur.execute("""
-            SELECT i.*, 
-                   COUNT(DISTINCT a.account_id) as connected_accounts,
-                   COUNT(DISTINCT t.transaction_id) as total_transactions,
-                   MAX(t.date) as last_transaction_date,
-                   MIN(i.created_at) as connected_on
-            FROM institutions i
-            LEFT JOIN accounts a ON i.id = a.institution_id
-            LEFT JOIN transactions t ON a.account_id = t.account_id
-            WHERE i.id = %s
-            GROUP BY i.id
+            WITH stats AS (
+                SELECT 
+                    i.*, 
+                    COUNT(DISTINCT a.account_id) as connected_accounts,
+                    COUNT(DISTINCT t.transaction_id) as total_transactions,
+                    COUNT(DISTINCT CASE 
+                        WHEN t.category IS NULL OR t.group_name IS NULL 
+                        THEN t.transaction_id 
+                    END) as uncategorized_transactions,
+                    MAX(t.date) as last_transaction_date,
+                    MIN(i.created_at) as connected_on
+                FROM institutions i
+                LEFT JOIN accounts a ON i.id = a.institution_id
+                LEFT JOIN transactions t ON a.account_id = t.account_id
+                WHERE i.id = %s
+                GROUP BY i.id
+            )
+            SELECT * FROM stats
         """, (institution_id,))
         
         result = cur.fetchone()
@@ -414,10 +422,11 @@ def get_institution_metadata(institution_id):
             'status': result['status'],
             'connectedAccounts': result['connected_accounts'] or 0,
             'totalTransactions': result['total_transactions'] or 0,
+            'uncategorizedTransactions': result['uncategorized_transactions'] or 0,
             'lastTransactionDate': result['last_transaction_date'].isoformat() if result['last_transaction_date'] else None,
             'connectedOn': result['connected_on'].isoformat() if result['connected_on'] else None,
-            'lastAccountRefresh': None,  # Add if you track this
-            'lastCreditPull': None  # Add if you track this
+            'lastAccountRefresh': None,
+            'lastCreditPull': None
         }
         
         return jsonify({'metadata': metadata})
