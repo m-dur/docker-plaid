@@ -198,6 +198,92 @@
             container.replaceWith(newCell.firstElementChild);
         }
 
+        function createGroupCell(transactionId, group, transactionName) {
+            const escapedTransactionName = transactionName ? transactionName.replace(/'/g, "\\'") : '';
+            return `
+                <div class="group-display">
+                    <span class="group-text">${group || 'N/A'}</span>
+                    <a class="edit-group" onclick="editGroup(this, '${transactionId}', '${group || ''}', '${escapedTransactionName}')">✏️</a>
+                </div>
+            `;
+        }
+
+        function editGroup(element, transactionId, currentGroup, transactionName) {
+            const container = element.closest('.group-display');
+            const input = document.createElement('div');
+            input.className = 'group-edit';
+            
+            const encodedTransactionName = btoa(transactionName);
+            
+            input.innerHTML = `
+                <div>
+                    <input type="text" class="group-input" value="${currentGroup || ''}" />
+                    <div class="edit-options">
+                        <label class="update-all-label">
+                            <input type="checkbox" class="update-all-checkbox" />
+                            Update all "${transactionName}" transactions
+                        </label>
+                        <div class="button-group">
+                            <button class="save-group" onclick="saveGroup(this, '${transactionId}', '${encodedTransactionName}')">Save</button>
+                            <button class="cancel-edit" onclick="cancelGroupEdit(this, '${transactionId}', '${currentGroup || ''}')">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.replaceWith(input);
+        }
+
+        function saveGroup(element, transactionId, encodedTransactionName) {
+            const container = element.closest('.group-edit');
+            const newGroup = container.querySelector('.group-input').value;
+            const updateAll = container.querySelector('.update-all-checkbox').checked;
+            
+            const transactionName = atob(encodedTransactionName);
+            
+            fetch('/api/transactions/update_group', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    transaction_id: transactionId,
+                    group: newGroup,
+                    update_all: updateAll,
+                    transaction_name: transactionName
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    if (updateAll) {
+                        window.location.reload();
+                    } else {
+                        const newCell = document.createElement('div');
+                        newCell.innerHTML = createGroupCell(transactionId, newGroup, transactionName);
+                        container.replaceWith(newCell.firstElementChild);
+                    }
+                } else {
+                    alert('Error updating group: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error updating group: ' + error.message);
+            });
+        }
+
+        function cancelGroupEdit(element, transactionId, currentGroup) {
+            const container = element.closest('.group-edit');
+            const newCell = document.createElement('div');
+            newCell.innerHTML = createGroupCell(transactionId, currentGroup);
+            container.replaceWith(newCell.firstElementChild);
+        }
+
         $(document).ready(function() {
             $.ajax({
                 url: '/api/transactions',
@@ -218,6 +304,8 @@
                                 } else if (key === 'amount') {
                                     const amountClass = value < 0 ? 'amount-negative' : 'amount-positive';
                                     tableHtml += `<td class="${amountClass}">$${Math.abs(value).toFixed(2)}</td>`;
+                                } else if (key === 'group_name') {
+                                    tableHtml += `<td>${createGroupCell(row.transaction_id, value, row.name)}</td>`;
                                 } else {
                                     tableHtml += `<td>${value === null ? '<span class="null-value">NULL</span>' : value}</td>`;
                                 }
@@ -235,6 +323,64 @@
                         order: [[3, 'desc']]
                     });
                 }
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // Handle group editing
+            document.querySelectorAll('.group-cell').forEach(cell => {
+                const groupText = cell.querySelector('.group-text');
+                const editIcon = cell.querySelector('.edit-icon');
+                const editControls = cell.querySelector('.edit-controls');
+                const groupInput = cell.querySelector('.group-input');
+                const saveButton = cell.querySelector('.save-group');
+                const updateAllCheckbox = cell.querySelector('.update-all-groups');
+                
+                editIcon.addEventListener('click', () => {
+                    groupText.style.display = 'none';
+                    editIcon.style.display = 'none';
+                    editControls.style.display = 'block';
+                    groupInput.focus();
+                });
+                
+                saveButton.addEventListener('click', async () => {
+                    const transactionId = cell.dataset.transactionId;
+                    const newGroup = groupInput.value;
+                    const updateAll = updateAllCheckbox.checked;
+                    const transactionName = cell.closest('tr').querySelector('.transaction-name').textContent;
+                    
+                    try {
+                        const response = await fetch('/api/transactions/update_group', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                transaction_id: transactionId,
+                                group: newGroup,
+                                update_all: updateAll,
+                                transaction_name: transactionName
+                            }),
+                        });
+                        
+                        const data = await response.json();
+                        if (data.success) {
+                            if (updateAll) {
+                                // Update all matching transaction groups
+                                document.querySelectorAll(`tr[data-transaction-name="${transactionName}"] .group-text`)
+                                    .forEach(text => text.textContent = newGroup || 'N/A');
+                            } else {
+                                groupText.textContent = newGroup || 'N/A';
+                            }
+                            
+                            groupText.style.display = 'inline';
+                            editIcon.style.display = 'inline';
+                            editControls.style.display = 'none';
+                        }
+                    } catch (error) {
+                        console.error('Error updating group:', error);
+                    }
+                });
             });
         });
     </script>

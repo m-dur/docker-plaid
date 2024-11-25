@@ -15,6 +15,11 @@ from ..db_operations.query_operations import execute_query
 from config import Config
 from financial_data.utils.db_connection import get_db_connection
 from psycopg2.extras import execute_values
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class FinancialDataHandler:
     def __init__(self):
@@ -26,6 +31,7 @@ class FinancialDataHandler:
             conn = get_db_connection()
             cur = conn.cursor()
             should_close = True
+            cur.execute("BEGIN")  # Start transaction
         
         # Initialize results dictionary
         results = {
@@ -110,9 +116,32 @@ class FinancialDataHandler:
             
         except Exception as e:
             if should_close:
-                conn.rollback()
+                cur.execute("ROLLBACK")  # Rollback all changes
+                
+                # Clean up any partial data
+                try:
+                    if item_info:
+                        institution_id = item_info.get('institution_id')
+                    else:
+                        item_info = get_item(access_token)
+                        institution_id = item_info['institution_id']
+                    
+                    # Delete all related data in correct order
+                    cur.execute("BEGIN")
+                    cur.execute("DELETE FROM transactions WHERE account_id IN (SELECT account_id FROM accounts WHERE institution_id = %s)", (institution_id,))
+                    cur.execute("DELETE FROM depository_accounts WHERE account_id IN (SELECT account_id FROM accounts WHERE institution_id = %s)", (institution_id,))
+                    cur.execute("DELETE FROM credit_accounts WHERE account_id IN (SELECT account_id FROM accounts WHERE institution_id = %s)", (institution_id,))
+                    cur.execute("DELETE FROM loan_accounts WHERE account_id IN (SELECT account_id FROM accounts WHERE institution_id = %s)", (institution_id,))
+                    cur.execute("DELETE FROM investment_accounts WHERE account_id IN (SELECT account_id FROM accounts WHERE institution_id = %s)", (institution_id,))
+                    cur.execute("DELETE FROM accounts WHERE institution_id = %s", (institution_id,))
+                    cur.execute("DELETE FROM institutions WHERE id = %s", (institution_id,))
+                    cur.execute("COMMIT")
+                    
+                except Exception as cleanup_error:
+                    logger.error(f"Error during cleanup: {cleanup_error}")
+                    cur.execute("ROLLBACK")
+                
             raise e
-        
         finally:
             if should_close and conn:
                 conn.close()
@@ -173,10 +202,15 @@ class FinancialDataHandler:
         try:
             conn = get_db_connection()
             cur = conn.cursor()
+            values = []  # Initialize values list
             
             # Get all existing category mappings
             cur.execute("SELECT transaction_name, category FROM category_mappings")
             category_mappings = dict(cur.fetchall())
+            
+            # Get all existing group mappings
+            cur.execute("SELECT transaction_name, group_name FROM group_mappings")
+            group_mappings = dict(cur.fetchall())
             
             # Process both added and modified transactions
             all_transactions = []
@@ -189,23 +223,9 @@ class FinancialDataHandler:
             for transaction in all_transactions:
                 # Check if we have a saved category for this transaction name
                 saved_category = category_mappings.get(transaction.name)
+                saved_group = group_mappings.get(transaction.name)
                 
-                cur.execute("""
-                    INSERT INTO transactions 
-                    (transaction_id, account_id, amount, date, name, category, 
-                    merchant_name, group_name, payment_channel, authorized_datetime, pull_date)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (transaction_id) DO UPDATE 
-                    SET amount = EXCLUDED.amount,
-                        date = EXCLUDED.date,
-                        name = EXCLUDED.name,
-                        category = COALESCE(EXCLUDED.category, transactions.category),
-                        merchant_name = EXCLUDED.merchant_name,
-                        group_name = EXCLUDED.group_name,
-                        payment_channel = EXCLUDED.payment_channel,
-                        authorized_datetime = EXCLUDED.authorized_datetime,
-                        pull_date = EXCLUDED.pull_date
-                """, (
+                values.append((
                     transaction.transaction_id,
                     transaction.account_id,
                     transaction.amount,
@@ -213,17 +233,34 @@ class FinancialDataHandler:
                     transaction.name,
                     saved_category,  # Use saved category from mappings
                     transaction.merchant_name,
-                    None,  # group_name
+                    saved_group,    # Use saved group from mappings
                     transaction.payment_channel,
                     transaction.authorized_datetime,
                     datetime.now().date()
                 ))
             
+            if values:  # Only try to save if we have transactions
+                execute_values(cur, """
+                    INSERT INTO transactions (
+                        transaction_id, account_id, amount, date, name,
+                        category, merchant_name, group_name, payment_channel,
+                        authorized_datetime, pull_date
+                    ) VALUES %s
+                    ON CONFLICT (transaction_id) DO UPDATE SET
+                        amount = EXCLUDED.amount,
+                        category = EXCLUDED.category,
+                        merchant_name = EXCLUDED.merchant_name,
+                        group_name = EXCLUDED.group_name,
+                        payment_channel = EXCLUDED.payment_channel,
+                        authorized_datetime = EXCLUDED.authorized_datetime,
+                        pull_date = EXCLUDED.pull_date
+                """, values)
+                
             conn.commit()
             return True
             
         except Exception as e:
-            app.logger.error(f"Error processing transactions: {str(e)}")
+            logger.error(f"Error processing transactions: {str(e)}")
             return False
         finally:
             if cur:

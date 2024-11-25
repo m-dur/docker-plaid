@@ -111,12 +111,15 @@ def exchange_public_token():
 @app.route('/fetch_financial_data', methods=['POST'])
 def fetch_financial_data():
     try:
-        with open('access_tokens.json', 'r') as f:
-            tokens_data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return jsonify({'message': 'No institutions connected'}), 401
-    
-    try:
+        # Get access tokens
+        tokens_data = {}
+        try:
+            with open('access_tokens.json', 'r') as f:
+                tokens_data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            app.logger.error(f"Error reading access tokens: {str(e)}")
+            return jsonify({'error': 'No access tokens found'}), 500
+
         handler = FinancialDataHandler()
         
         all_results = []
@@ -130,7 +133,7 @@ def fetch_financial_data():
             except Exception as e:
                 app.logger.error(f"Error processing institution {institution_data['institution_name']}: {str(e)}")
                 return jsonify({'error': f"Error processing institution {institution_data['institution_name']}: {str(e)}"}), 500
-        
+
         return jsonify({'results': all_results}), 200
         
     except Exception as e:
@@ -520,6 +523,55 @@ def update_transaction_category():
             cur.close()
         if conn:
             conn.close()
+
+@app.route('/api/transactions/update_group', methods=['POST'])
+def update_transaction_group():
+    try:
+        transaction_id = request.json.get('transaction_id')
+        new_group = request.json.get('group')
+        update_all = request.json.get('update_all', False)
+        transaction_name = request.json.get('transaction_name')
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # First, update the group_mappings table
+        cur.execute("""
+            INSERT INTO group_mappings (transaction_name, group_name)
+            VALUES (%s, %s)
+            ON CONFLICT (transaction_name) 
+            DO UPDATE SET 
+                group_name = EXCLUDED.group_name,
+                last_updated = CURRENT_TIMESTAMP
+        """, (transaction_name, new_group))
+        
+        # Then update the transactions table
+        if update_all:
+            cur.execute("""
+                UPDATE transactions 
+                SET group_name = %s
+                WHERE name = %s
+                RETURNING transaction_id, group_name, name
+            """, (new_group, transaction_name))
+        else:
+            cur.execute("""
+                UPDATE transactions 
+                SET group_name = %s
+                WHERE transaction_id = %s
+                RETURNING transaction_id, group_name, name
+            """, (new_group, transaction_id))
+        
+        updated = cur.fetchall()
+        conn.commit()
+        
+        return jsonify({
+            'success': True, 
+            'updated_count': len(updated),
+            'transaction_id': transaction_id,
+            'group': new_group
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
