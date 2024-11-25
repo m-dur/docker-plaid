@@ -572,5 +572,69 @@ def update_transaction_group():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/accounts')
+def accounts():
+    return render_template('accounts.html')
+
+@app.route('/api/accounts/get_all', methods=['GET'])
+def get_all_accounts():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        cur.execute("""
+            SELECT a.*, ato.override_type, ato.override_subtype 
+            FROM accounts a
+            LEFT JOIN account_type_overrides ato ON a.account_id = ato.account_id
+            ORDER BY a.account_name
+        """)
+        accounts = cur.fetchall()
+        
+        return jsonify(accounts)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/api/accounts/update_type', methods=['POST'])
+def update_account_type():
+    try:
+        account_id = request.json.get('account_id')
+        new_type = request.json.get('type')
+        new_subtype = request.json.get('subtype')
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            INSERT INTO account_type_overrides 
+            (account_id, original_type, original_subtype, override_type, override_subtype)
+            SELECT 
+                %(account_id)s,
+                type,
+                subtype,
+                %(new_type)s,
+                %(new_subtype)s
+            FROM accounts 
+            WHERE account_id = %(account_id)s
+            ON CONFLICT (account_id) DO UPDATE
+            SET 
+                override_type = EXCLUDED.override_type,
+                override_subtype = EXCLUDED.override_subtype
+        """, {
+            'account_id': account_id,
+            'new_type': new_type,
+            'new_subtype': new_subtype
+        })
+        
+        conn.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
 if __name__ == '__main__':
     app.run(debug=True, port=5001)

@@ -1,0 +1,174 @@
+<html>
+<head>
+    <link href='https://fonts.googleapis.com/css?family=Roboto' rel='stylesheet'>
+    <style>
+        body { 
+            background-color: #B1EEFC; 
+            font-family: 'Roboto', sans-serif; 
+        }
+        .container {
+            width: 95%;
+            margin: 20px auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .back-button {
+            background-color: #0A85EA;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 4px;
+            text-decoration: none;
+        }
+        #accounts-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        #accounts-table th, #accounts-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        .type-display {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .edit-type {
+            cursor: pointer;
+            color: #0A85EA;
+        }
+        .type-edit {
+            padding: 8px 0;
+        }
+        .button-group {
+            margin-top: 8px;
+        }
+        .button-group button {
+            margin-right: 8px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            cursor: pointer;
+        }
+        .save-type {
+            background-color: #0A85EA;
+            color: white;
+            border: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Account Management</h1>
+            <a href="/" class="back-button">Back to Home</a>
+        </div>
+        
+        <div id="accounts-table"></div>
+    </div>
+
+    <script>
+        function createTypeCell(accountId, currentType, currentSubtype) {
+            return `
+                <div class="type-display">
+                    <span class="type-text">${currentType || 'N/A'}</span>
+                    <span class="subtype-text">${currentSubtype || 'N/A'}</span>
+                    <a class="edit-type" onclick="editType(this, '${accountId}', '${currentType}', '${currentSubtype}')">✏️</a>
+                </div>
+            `;
+        }
+
+        function editType(element, accountId, currentType, currentSubtype) {
+            const container = element.closest('.type-display');
+            const input = document.createElement('div');
+            input.className = 'type-edit';
+            
+            input.innerHTML = `
+                <div>
+                    <select class="type-input">
+                        <option value="depository" ${currentType === 'depository' ? 'selected' : ''}>Depository</option>
+                        <option value="credit" ${currentType === 'credit' ? 'selected' : ''}>Credit</option>
+                        <option value="loan" ${currentType === 'loan' ? 'selected' : ''}>Loan</option>
+                        <option value="investment" ${currentType === 'investment' ? 'selected' : ''}>Investment</option>
+                    </select>
+                    <input type="text" class="subtype-input" value="${currentSubtype || ''}" placeholder="Subtype" />
+                    <div class="button-group">
+                        <button class="save-type" onclick="saveType(this, '${accountId}')">Save</button>
+                        <button class="cancel-edit" onclick="cancelEdit(this, '${accountId}', '${currentType}', '${currentSubtype}')">Cancel</button>
+                    </div>
+                </div>
+            `;
+            container.replaceWith(input);
+        }
+
+        function saveType(element, accountId) {
+            const container = element.closest('.type-edit');
+            const newType = container.querySelector('.type-input').value;
+            const newSubtype = container.querySelector('.subtype-input').value;
+            
+            fetch('/api/accounts/update_type', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    account_id: accountId,
+                    type: newType,
+                    subtype: newSubtype
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    container.replaceWith(createTypeCell(accountId, newType, newSubtype));
+                }
+            });
+        }
+
+        function cancelEdit(element, accountId, currentType, currentSubtype) {
+            const container = element.closest('.type-edit');
+            container.replaceWith(createTypeCell(accountId, currentType, currentSubtype));
+        }
+
+        // Load accounts data
+        fetch('/api/accounts/get_all')
+            .then(response => response.json())
+            .then(accounts => {
+                const table = document.createElement('table');
+                table.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>Account Name</th>
+                            <th>Type</th>
+                            <th>Mask</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${accounts.map(account => `
+                            <tr>
+                                <td>${account.account_name}</td>
+                                <td>${createTypeCell(
+                                    account.account_id, 
+                                    account.override_type || account.type,
+                                    account.override_subtype || account.subtype
+                                )}</td>
+                                <td>${account.mask || 'N/A'}</td>
+                                <td>${account.verification_status || 'N/A'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                `;
+                document.getElementById('accounts-table').appendChild(table);
+            });
+    </script>
+</body>
+</html> 
