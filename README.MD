@@ -65,10 +65,10 @@ Note: These files contain sensitive information and are excluded from git via .g
 ## System Architecture
 
 ### Component Diagram
-<img src="docs/images/diagram.png" alt="System Architecture Diagram" width="800"/>
+<img src="docs/images/Financial Data Fetcher Architecture.png" alt="System Architecture Diagram" width="800"/>
 
 ### Database Schema
-<img src="docs/images/database.png" alt="Database Schema" width="800"/>
+<img src="docs/images/Financial Database Schema.png" alt="Database Schema" width="800"/>
 
 ## Technologies Used
 - Backend: Python/Flask

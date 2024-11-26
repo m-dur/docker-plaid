@@ -226,12 +226,16 @@ def get_transactions():
     
     try:
         cur.execute("""
-            SELECT 
-                t.*,
+             SELECT 
+                t.date,  
+                t.category,
+                t.group_name,
+                t.name,
+                t.amount,
                 a.account_name
             FROM transactions t
             LEFT JOIN accounts a ON t.account_id = a.account_id
-            ORDER BY t.date DESC
+            order by date desc
         """)
         transactions = cur.fetchall()
         return jsonify(transactions)

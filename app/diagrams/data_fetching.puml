@@ -1,0 +1,71 @@
+@startuml Financial Data Fetching Process
+
+skinparam {
+    BackgroundColor white
+    ArrowColor black
+    ActorBorderColor black
+    LifelineBackgroundColor white
+}
+
+participant "Flask App" as App
+participant "FinancialDataHandler" as Handler
+participant "PlaidService" as Plaid
+participant "Processors" as Proc
+database "PostgreSQL" as DB
+database "cursor.json" as Cursor
+
+-> App: POST /fetch_financial_data
+activate App
+
+App -> Handler: fetch_and_process_financial_data
+activate Handler
+
+Handler -> Plaid: get_item()
+Plaid --> Handler: item_info
+
+Handler -> Plaid: get_institution_info()
+Plaid --> Handler: institution_info
+
+Handler -> Proc: process_institutions()
+Proc --> Handler: institution_df
+
+Handler -> DB: Save institution data
+
+Handler -> Plaid: get_accounts()
+Plaid --> Handler: accounts
+
+Handler -> Plaid: get_bank_balances()
+Plaid --> Handler: balances
+
+Handler -> Plaid: get_liabilities()
+Plaid --> Handler: loans, credit_cards
+
+Handler -> Proc: process_accounts()
+Proc --> Handler: accounts_dfs
+
+Handler -> DB: Save accounts data
+
+Handler -> Plaid: get_transactions_sync()
+Plaid --> Handler: transactions_response
+
+alt has transactions
+    Handler -> DB: Get category_mappings
+    Handler -> DB: Get group_mappings
+    Handler -> Proc: process_transactions()
+    Handler -> DB: Save transactions
+    Handler -> Cursor: Save next_cursor
+end
+
+Handler --> App: Return results
+deactivate Handler
+
+App --> : Return success/failure
+deactivate App
+
+note right of Handler
+  Reference: app/financial_data/handlers/financial_data_handler.py
+  startLine: 28
+  endLine: 127
+end note
+
+@enduml 

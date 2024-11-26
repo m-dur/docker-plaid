@@ -117,6 +117,23 @@
             margin-top: 10px;
             margin-bottom: 10px;
         }
+        .dataTables_filter {
+            margin: 20px 0;
+            float: none !important;
+            text-align: left !important;
+        }
+
+        .dataTables_filter input {
+            width: 300px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-left: 8px;
+        }
+
+        .top {
+            margin-bottom: 20px;
+        }
     </style>
 </head>
 <body>
@@ -146,6 +163,14 @@
         }
 
         function editCategory(element, transactionId, currentCategory, transactionName) {
+            // First, cancel any existing edits
+            const existingEdits = document.querySelectorAll('.category-edit');
+            existingEdits.forEach(edit => {
+                const id = edit.querySelector('.save-category').getAttribute('onclick').split("'")[1];
+                const category = edit.querySelector('.category-input').value;
+                cancelEdit(edit.querySelector('.cancel-edit'), id, category);
+            });
+
             const container = element.closest('.category-display');
             const input = document.createElement('div');
             input.className = 'category-edit';
@@ -175,7 +200,6 @@
             const container = element.closest('.category-edit');
             const newCategory = container.querySelector('.category-input').value;
             const updateAll = container.querySelector('.update-all-checkbox').checked;
-            
             const transactionName = atob(encodedTransactionName);
             
             fetch('/api/transactions/update_category', {
@@ -198,25 +222,8 @@
             })
             .then(data => {
                 if (data.success) {
-                    const table = $('.display').DataTable();
-                    if (updateAll) {
-                        // Update all matching rows in the current view
-                        table.rows().every(function() {
-                            const rowData = this.data();
-                            if (rowData.name === transactionName) {
-                                // Update the cell content
-                                const cell = $(this.node()).find('.category-display, .category-edit');
-                                const newCellHtml = createCategoryCell(rowData.transaction_id, newCategory, transactionName);
-                                cell.replaceWith($(newCellHtml));
-                            }
-                        });
-                    } else {
-                        // Update just the single cell
-                        const newCellHtml = createCategoryCell(transactionId, newCategory, transactionName);
-                        container.replaceWith($(newCellHtml));
-                    }
-                    // Maintain the DataTable's state
-                    table.draw(false);
+                    const newCellHtml = createCategoryCell(transactionId, newCategory, transactionName);
+                    container.outerHTML = newCellHtml; // Update the DOM immediately
                 } else {
                     alert('Error updating category: ' + (data.error || 'Unknown error'));
                 }
@@ -273,7 +280,6 @@
             const container = element.closest('.group-edit');
             const newGroup = container.querySelector('.group-input').value;
             const updateAll = container.querySelector('.update-all-checkbox').checked;
-            
             const transactionName = atob(encodedTransactionName);
             
             fetch('/api/transactions/update_group', {
@@ -296,25 +302,8 @@
             })
             .then(data => {
                 if (data.success) {
-                    const table = $('.display').DataTable();
-                    if (updateAll) {
-                        // Update all matching rows in the current view
-                        table.rows().every(function() {
-                            const rowData = this.data();
-                            if (rowData.name === transactionName) {
-                                // Update the cell content
-                                const cell = $(this.node()).find('.group-display, .group-edit');
-                                const newCellHtml = createGroupCell(rowData.transaction_id, newGroup, transactionName);
-                                cell.replaceWith($(newCellHtml));
-                            }
-                        });
-                    } else {
-                        // Update just the single cell
-                        const newCellHtml = createGroupCell(transactionId, newGroup, transactionName);
-                        container.replaceWith($(newCellHtml));
-                    }
-                    // Maintain the DataTable's state
-                    table.draw(false);
+                    const newCellHtml = createGroupCell(transactionId, newGroup, transactionName);
+                    container.outerHTML = newCellHtml; // Update the DOM immediately
                 } else {
                     alert('Error updating group: ' + (data.error || 'Unknown error'));
                 }
@@ -340,18 +329,21 @@
                     console.log('First row data:', data[0]);
                     let tableHtml = '<table class="display"><thead><tr>';
                     if (data && data.length > 0) {
-                        // Reorder keys to put account_name, category, group_name, and name first
+                        // Reorder keys and remove unwanted columns
                         const orderedKeys = [
+                            'date', // Use date instead of date_id
                             'account_name',
                             'category',
                             'group_name',
                             'name',
+                            'amount',
+                            // Add other keys you want to keep, excluding 'account_id' and 'authorized_datetime'
                             ...Object.keys(data[0]).filter(key => 
-                                !['account_name', 'category', 'group_name', 'name'].includes(key)
+                                !['account_id', 'authorized_datetime', 'payment_channel', 'date', 'account_name', 'category', 'group_name', 'name', 'amount'].includes(key)
                             )
                         ];
                         orderedKeys.forEach(key => {
-                            tableHtml += `<th>${key}</th>`;
+                            tableHtml += `<th>${key}<br><input type="text" placeholder="Search ${key}" /></th>`;
                         });
                         tableHtml += '</tr></thead><tbody>';
                         
@@ -376,20 +368,31 @@
                     
                     $('#transactions-table').html(tableHtml);
                     
-                    $('.display').DataTable({
-                        dom: 'Pfrti',
-                        searchPanes: {
-                            viewTotal: true,
-                            columns: [0, 1, 2, 3] // [account_name, category, group_name, name]
-                        },
+                    const table = $('.display').DataTable({
+                        dom: 'frti',
                         scrollX: true,
                         paging: false,
                         pageLength: -1,     // Show all rows
                         lengthMenu: [],     // Remove the page length dropdown
-                        order: [[4, 'desc']],
+                        order: [[0, 'desc']], // Order by date
                         stateSave: true,
                         select: true,
                         info: false
+                    });
+
+                    // Prevent sorting when clicking on filter inputs
+                    $('.display thead input').on('click', function(e) {
+                        e.stopPropagation();
+                    });
+
+                    // Apply the search
+                    table.columns().every(function() {
+                        const that = this;
+                        $('input', this.header()).on('keyup change clear', function() {
+                            if (that.search() !== this.value) {
+                                that.search(this.value).draw();
+                            }
+                        });
                     });
                 }
             });
