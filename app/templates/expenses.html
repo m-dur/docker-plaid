@@ -75,6 +75,8 @@
         }
         .filter-section {
             margin: 20px 0;
+            display: flex;
+            gap: 15px;
         }
         #category-filter {
             padding: 8px;
@@ -112,6 +114,22 @@
         .dataTables_wrapper {
             margin-top: 20px;
         }
+        #month-filter {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            background-color: white;
+            min-width: 200px;
+            cursor: pointer;
+        }
+        #month-filter option {
+            padding: 8px;
+            background-color: white;
+        }
+        #month-filter:focus {
+            outline: none;
+            border-color: #0A85EA;
+        }
     </style>
 </head>
 <body>
@@ -140,6 +158,9 @@
             <select id="category-filter" class="category-select">
                 <option value="all">All Categories</option>
             </select>
+            <select id="month-filter">
+                <option value="all">All Months</option>
+            </select>
         </div>
 
         <div id="monthly-chart" style="width:100%; margin-bottom: 40px;"></div>
@@ -155,6 +176,9 @@
             let expensesData = null;
             let table = null;
 
+            // Populate month filter on page load
+            populateMonthFilter();
+            
             // Load expenses summary data
             $.ajax({
                 url: '/api/expenses/summary',
@@ -197,16 +221,25 @@
             });
 
             function updateDashboard(data) {
-                // Update summary cards
-                $('#total-expenses').text(`$${data.total_expenses.toFixed(2)}`);
-                $('#avg-monthly').text(`$${data.monthly_average.toFixed(2)}`);
-                $('#highest-category').text(data.highest_category);
-
-                // Update table
-                updateTable(data);
-
-                // Update chart
-                updateChart(data);
+                const selectedCategory = $('#category-filter').val();
+                const selectedMonth = $('#month-filter').val();
+                
+                $.ajax({
+                    url: '/api/expenses/summary',
+                    data: {
+                        category: selectedCategory,
+                        month: selectedMonth
+                    },
+                    success: function(data) {
+                        // Update summary cards and table
+                        $('#total-expenses').text('$' + data.total_expenses.toFixed(2));
+                        $('#monthly-average').text('$' + data.monthly_average.toFixed(2));
+                        $('#highest-category').text(data.highest_category);
+                        updateTable(data);
+                    }
+                });
+                
+                updateChart();
             }
 
             function updateTable(data) {
@@ -251,73 +284,124 @@
                 });
             }
 
-            function updateChart(data) {
+            function updateChart() {
                 const selectedCategory = $('#category-filter').val();
+                const selectedMonth = $('#month-filter').val();
+                const currentMonth = new Date().toISOString().slice(0, 7);
                 
-                $.ajax({
-                    url: '/api/expenses/monthly',
-                    method: 'GET',
-                    data: { 
-                        category: selectedCategory,
-                        start_date: new Date(new Date().setFullYear(new Date().getFullYear() - 1)).toISOString(),
-                        end_date: new Date().toISOString()
-                    },
-                    success: function(chartData) {
-                        // Filter out months with zero amounts
-                        const nonZeroData = chartData.months.reduce((acc, month, index) => {
-                            if (chartData.amounts[index] !== 0) {
-                                acc.months.push(month);
-                                acc.amounts.push(Math.abs(chartData.amounts[index]));
+                if (selectedMonth === currentMonth) {
+                    // Daily view for current month
+                    $.ajax({
+                        url: '/api/expenses/daily',
+                        method: 'GET',
+                        data: { 
+                            category: selectedCategory,
+                            month: selectedMonth
+                        },
+                        success: function(chartData) {
+                            if (!chartData.dates || !chartData.amounts) {
+                                console.error('Invalid chart data received');
+                                return;
                             }
-                            return acc;
-                        }, { months: [], amounts: [] });
-                        
-                        const trace = {
-                            x: nonZeroData.months,
-                            y: nonZeroData.amounts,
-                            type: 'bar',
-                            marker: {
-                                color: '#0A85EA'
-                            },
-                            text: nonZeroData.amounts.map(val => `$${val.toFixed(2)}`),
-                            textposition: 'auto',
-                        };
-
-                        const layout = {
-                            title: {
-                                text: selectedCategory === 'all' ? 
-                                    'Monthly Expenses - All Categories' : 
-                                    `Monthly Expenses - ${selectedCategory}`,
-                                font: {
-                                    size: 18
+                            
+                            const currentDate = new Date().toISOString().slice(0, 10);
+                            const currentIndex = chartData.dates.indexOf(currentDate);
+                            
+                            const trace1 = {
+                                x: chartData.dates,
+                                y: chartData.amounts,
+                                type: 'scatter',
+                                mode: 'lines',
+                                line: {
+                                    color: '#0A85EA',
+                                    width: 2
+                                },
+                                name: 'Cumulative Spend'
+                            };
+                            
+                            const trace2 = {
+                                x: [currentDate],
+                                y: [chartData.amounts[currentIndex]],
+                                type: 'bar',
+                                marker: {
+                                    color: '#0A85EA'
+                                },
+                                name: 'Current Day'
+                            };
+                            
+                            const layout = {
+                                title: {
+                                    text: `Daily Expenses - ${selectedCategory === 'all' ? 'All Categories' : selectedCategory}`,
+                                    font: { size: 18 }
+                                },
+                                xaxis: { 
+                                    title: 'Date',
+                                    tickangle: -45
+                                },
+                                yaxis: { 
+                                    title: 'Cumulative Amount',
+                                    tickformat: '$,.2f'
+                                },
+                                height: 400,
+                                margin: {
+                                    b: 100,
+                                    t: 50,
+                                    l: 80,
+                                    r: 40
                                 }
-                            },
-                            xaxis: { 
-                                title: 'Month',
-                                tickangle: -45
-                            },
-                            yaxis: { 
-                                title: 'Amount',
-                                tickformat: '$,.2f'
-                            },
-                            bargap: 0.3,
-                            height: 400,
-                            margin: {
-                                b: 100,
-                                t: 50,
-                                l: 80,
-                                r: 40
-                            }
-                        };
-
-                        const config = {
-                            responsive: true,
-                            displayModeBar: false
-                        };
-
-                        Plotly.newPlot('monthly-chart', [trace], layout, config);
-                    }
-                });
+                            };
+                            
+                            Plotly.newPlot('monthly-chart', [trace1, trace2], layout);
+                        }
+                    });
+                } else {
+                    // Monthly bar chart view
+                    $.ajax({
+                        url: '/api/expenses/monthly',
+                        method: 'GET',
+                        data: { 
+                            category: selectedCategory,
+                            start_date: new Date(new Date().setFullYear(new Date().getFullYear() - 1)).toISOString(),
+                            end_date: new Date().toISOString()
+                        },
+                        success: function(chartData) {
+                            const trace = {
+                                x: chartData.months,
+                                y: chartData.amounts,
+                                type: 'bar',
+                                marker: {
+                                    color: '#0A85EA'
+                                },
+                                text: chartData.amounts.map(val => `$${val.toFixed(2)}`),
+                                textposition: 'auto',
+                            };
+                            
+                            const layout = {
+                                title: {
+                                    text: `Monthly Expenses - ${selectedCategory === 'all' ? 'All Categories' : selectedCategory}`,
+                                    font: { size: 18 }
+                                },
+                                xaxis: { 
+                                    title: 'Month',
+                                    tickangle: -45
+                                },
+                                yaxis: { 
+                                    title: 'Amount',
+                                    tickformat: '$,.2f'
+                                },
+                                height: 400,
+                                margin: {
+                                    b: 100,
+                                    t: 50,
+                                    l: 80,
+                                    r: 40
+                                }
+                            };
+                            
+                            Plotly.newPlot('monthly-chart', [trace], layout);
+                        }
+                    });
+                }
             }
 
             // Populate category filter
@@ -335,11 +419,33 @@
                 }
             });
 
-            // Add change handler for the filter
-            $('#category-filter').change(function() {
+            // Add change handler for both filters
+            $('#category-filter, #month-filter').change(function() {
                 updateChart();
-                updateTable();
+                updateDashboard();
             });
+
+            function populateMonthFilter() {
+                const monthFilter = $('#month-filter');
+                monthFilter.empty();
+                monthFilter.append('<option value="all">All Months</option>');
+                
+                // Get last 12 months
+                const months = [];
+                for (let i = 0; i < 12; i++) {
+                    const date = new Date();
+                    date.setMonth(date.getMonth() - i);
+                    const monthYear = date.toLocaleString('default', { month: 'long', year: 'numeric' });
+                    months.push({
+                        label: monthYear,
+                        value: date.toISOString().slice(0, 7) // YYYY-MM format
+                    });
+                }
+                
+                months.forEach(month => {
+                    monthFilter.append(`<option value="${month.value}">${month.label}</option>`);
+                });
+            }
         });
     </script>
 </body>

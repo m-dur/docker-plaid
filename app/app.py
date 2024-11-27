@@ -20,6 +20,7 @@ from plaid.model.item_remove_request import ItemRemoveRequest
 from psycopg2.extras import RealDictCursor
 from sqlalchemy import text
 from dateutil.relativedelta import relativedelta
+import calendar
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'  # Change this to a secure random key
@@ -450,38 +451,6 @@ def get_institution_metadata(institution_id):
 def transactions():
     return render_template('transactions.html')
 
-@app.route('/api/database_status')
-def database_status():
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        # Get all tables in the database
-        cur.execute("""
-            SELECT table_name 
-            FROM information_schema.tables 
-            WHERE table_schema = 'public'
-        """)
-        tables = [row[0] for row in cur.fetchall()]
-        
-        # Get row counts for each table
-        table_stats = {}
-        for table in tables:
-            cur.execute(f"SELECT COUNT(*) FROM {table}")
-            count = cur.fetchone()[0]
-            table_stats[table] = {"count": count}
-        
-        return jsonify(table_stats)
-        
-    except Exception as e:
-        print(f"Error getting database status: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-    finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()
-
 @app.route('/api/transactions/update_category', methods=['POST'])
 def update_transaction_category():
     try:
@@ -597,11 +566,31 @@ def expenses_summary():
     cur = conn.cursor()
     
     try:
+        # Get filter parameters
+        category = request.args.get('category', 'all')
+        month = request.args.get('month', 'all')
+        
         # Get last 12 months
         end_date = datetime.now()
         start_date = end_date - relativedelta(months=11)
         
-        query = """
+        base_conditions = """
+            WHERE t.amount > 0
+            AND t.date BETWEEN %s AND %s
+            AND LOWER(COALESCE(t.category, '')) NOT LIKE '%%transfer%%'
+        """
+        
+        params = [start_date, end_date]
+        
+        if category != 'all':
+            base_conditions += " AND t.category = %s"
+            params.append(category)
+            
+        if month != 'all':
+            base_conditions += " AND TO_CHAR(t.date, 'YYYY-MM') = %s"
+            params.append(month)
+        
+        query = f"""
         WITH filtered_transactions AS (
             SELECT 
                 t.transaction_id,
@@ -610,9 +599,7 @@ def expenses_summary():
                 t.amount,
                 t.date
             FROM transactions t
-            WHERE t.amount > 0
-            AND t.date BETWEEN %s AND %s
-            AND LOWER(COALESCE(t.category, '')) NOT LIKE '%%transfer%%'
+            {base_conditions}
         ),
         category_totals AS (
             SELECT 
@@ -638,7 +625,7 @@ def expenses_summary():
         ORDER BY ft.date DESC, ft.amount DESC
         """
         
-        cur.execute(query, (start_date, end_date))
+        cur.execute(query, tuple(params))
         results = cur.fetchall()
         
         # Calculate summary statistics
@@ -767,6 +754,127 @@ def get_categories():
         return jsonify({'categories': categories})
     except Exception as e:
         print(f"Error getting categories: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/api/expenses/daily')
+def expenses_daily():
+    category = request.args.get('category', 'all')
+    month = request.args.get('month')
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Get all days in current month
+        current_month = datetime.strptime(month, '%Y-%m')
+        _, last_day = calendar.monthrange(current_month.year, current_month.month)
+        start_date = current_month.replace(day=1)
+        end_date = current_month.replace(day=last_day)
+        
+        if category != 'all':
+            query = """
+            WITH RECURSIVE dates AS (
+                SELECT generate_series(
+                    %s::date,
+                    %s::date,
+                    '1 day'::interval
+                )::date AS date
+            ),
+            daily_totals AS (
+                SELECT 
+                    t.date::date,
+                    COALESCE(SUM(t.amount), 0) as daily_amount
+                FROM transactions t
+                WHERE t.date >= %s 
+                AND t.date <= %s
+                AND category = %s
+                AND t.amount > 0
+                GROUP BY t.date::date
+            )
+            SELECT 
+                d.date,
+                SUM(dt.daily_amount) OVER (ORDER BY d.date) as cumulative_amount
+            FROM dates d
+            LEFT JOIN daily_totals dt ON d.date = dt.date
+            ORDER BY d.date;
+            """
+            cur.execute(query, (start_date, end_date, start_date, end_date, category))
+        else:
+            query = """
+            WITH RECURSIVE dates AS (
+                SELECT generate_series(
+                    %s::date,
+                    %s::date,
+                    '1 day'::interval
+                )::date AS date
+            ),
+            daily_totals AS (
+                SELECT 
+                    t.date::date,
+                    COALESCE(SUM(t.amount), 0) as daily_amount
+                FROM transactions t
+                WHERE t.date >= %s 
+                AND t.date <= %s
+                AND t.amount > 0
+                AND category <> 'Transfer'
+                GROUP BY t.date::date
+            )
+            SELECT 
+                d.date,
+                SUM(dt.daily_amount) OVER (ORDER BY d.date) as cumulative_amount
+            FROM dates d
+            LEFT JOIN daily_totals dt ON d.date = dt.date
+            ORDER BY d.date;
+            """
+            cur.execute(query, (start_date, end_date, start_date, end_date))
+        
+        results = cur.fetchall()
+        return jsonify({
+            'dates': [row[0].strftime('%Y-%m-%d') for row in results],
+            'amounts': [float(row[1]) for row in results]
+        })
+        
+    except Exception as e:
+        print(f"Error in expenses_daily: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/api/database_status')
+def database_status():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Query to get row counts for all tables
+        query = """
+        SELECT 
+            table_name,
+            (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = c.table_name) as column_count,
+            (SELECT reltuples::bigint FROM pg_class WHERE relname = c.table_name) as row_count
+        FROM information_schema.tables c
+        WHERE table_schema = 'public'
+        AND table_type = 'BASE TABLE';
+        """
+        
+        cur.execute(query)
+        results = cur.fetchall()
+        
+        stats = {}
+        for table_name, column_count, row_count in results:
+            stats[table_name] = {
+                'count': row_count,
+                'columns': column_count
+            }
+            
+        return jsonify(stats)
+        
+    except Exception as e:
+        print(f"Error getting database stats: {str(e)}")
         return jsonify({'error': str(e)}), 500
     finally:
         cur.close()
