@@ -143,6 +143,13 @@
             <a href="/" class="back-button">Back to Home</a>
         </div>
         
+        <div class="filter-options">
+            <label>
+                <input type="checkbox" id="filter-empty">
+                Show only transactions with empty category or group
+            </label>
+        </div>
+        
         <div id="transactions-table"></div>
     </div>
 
@@ -223,7 +230,10 @@
             .then(data => {
                 if (data.success) {
                     const newCellHtml = createCategoryCell(transactionId, newCategory, transactionName);
-                    container.outerHTML = newCellHtml; // Update the DOM immediately
+                    container.outerHTML = newCellHtml;
+                    if ($('#filter-empty').is(':checked') && newCategory !== 'N/A') {
+                        $('.display').DataTable().row(container.closest('tr')).remove().draw();
+                    }
                 } else {
                     alert('Error updating category: ' + (data.error || 'Unknown error'));
                 }
@@ -303,7 +313,10 @@
             .then(data => {
                 if (data.success) {
                     const newCellHtml = createGroupCell(transactionId, newGroup, transactionName);
-                    container.outerHTML = newCellHtml; // Update the DOM immediately
+                    container.outerHTML = newCellHtml;
+                    if ($('#filter-empty').is(':checked') && newGroup !== 'N/A') {
+                        $('.display').DataTable().row(container.closest('tr')).remove().draw();
+                    }
                 } else {
                     alert('Error updating group: ' + (data.error || 'Unknown error'));
                 }
@@ -328,16 +341,15 @@
                 success: function(data) {
                     console.log('First row data:', data[0]);
                     let tableHtml = '<table class="display"><thead><tr>';
+                    tableHtml += '<th>#</th>';
                     if (data && data.length > 0) {
-                        // Reorder keys and remove unwanted columns
                         const orderedKeys = [
-                            'date', // Use date instead of date_id
+                            'date',
                             'account_name',
                             'category',
                             'group_name',
                             'name',
                             'amount',
-                            // Add other keys you want to keep, excluding 'account_id' and 'authorized_datetime'
                             ...Object.keys(data[0]).filter(key => 
                                 !['account_id', 'authorized_datetime', 'payment_channel', 'date', 'account_name', 'category', 'group_name', 'name', 'amount'].includes(key)
                             )
@@ -347,8 +359,8 @@
                         });
                         tableHtml += '</tr></thead><tbody>';
                         
-                        data.forEach(row => {
-                            tableHtml += '<tr>';
+                        data.forEach((row, index) => {
+                            tableHtml += `<tr><td>${index + 1}</td>`;
                             orderedKeys.forEach(key => {
                                 if (key === 'category') {
                                     tableHtml += `<td>${createCategoryCell(row.transaction_id, row[key], row.name)}</td>`;
@@ -372,9 +384,9 @@
                         dom: 'frti',
                         scrollX: true,
                         paging: false,
-                        pageLength: -1,     // Show all rows
-                        lengthMenu: [],     // Remove the page length dropdown
-                        order: [[0, 'desc']], // Order by date
+                        pageLength: -1,
+                        lengthMenu: [],
+                        order: [[1, 'desc']],
                         stateSave: true,
                         select: true,
                         info: false
@@ -386,13 +398,37 @@
                     });
 
                     // Apply the search
-                    table.columns().every(function() {
-                        const that = this;
-                        $('input', this.header()).on('keyup change clear', function() {
-                            if (that.search() !== this.value) {
-                                that.search(this.value).draw();
-                            }
-                        });
+                    table.columns().every(function(index) {
+                        if (index > 0) {
+                            const that = this;
+                            $('input', this.header()).on('keyup change clear', function() {
+                                if (that.search() !== this.value) {
+                                    that.search(this.value).draw();
+                                }
+                            });
+                        }
+                    });
+
+                    // Add checkbox for filtering empty categories or groups
+                    $('#filter-empty').on('change', function() {
+                        if (this.checked) {
+                            $.fn.dataTable.ext.search.push(
+                                function(settings, data, dataIndex) {
+                                    // Get the text content from the category and group cells
+                                    const categoryCell = $(table.cell(dataIndex, 3).node());
+                                    const groupCell = $(table.cell(dataIndex, 4).node());
+                                    
+                                    const categoryText = categoryCell.find('.category-text').text().trim();
+                                    const groupText = groupCell.find('.group-text').text().trim();
+                                    
+                                    // Show row if either category or group is empty or N/A
+                                    return categoryText === 'N/A' || groupText === 'N/A';
+                                }
+                            );
+                        } else {
+                            $.fn.dataTable.ext.search.pop();
+                        }
+                        table.draw();
                     });
                 }
             });

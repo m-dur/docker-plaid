@@ -1,0 +1,340 @@
+<html>
+<head>
+    <link href='https://fonts.googleapis.com/css?family=Roboto' rel='stylesheet'>
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.css">
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.dataTables.min.css">
+    <style>
+        body { 
+            background-color: #B1EEFC; 
+            font-family: 'Roboto', sans-serif; 
+        }
+        .container {
+            width: 95%;
+            margin: 20px auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .back-button {
+            background-color: #0A85EA;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .amount-negative {
+            color: #cc0000;
+            font-weight: bold;
+        }
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .summary-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .summary-card h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+        .summary-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #0A85EA;
+        }
+        #monthly-chart {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            margin-bottom: 40px;
+            clear: both;
+        }
+        .filter-options {
+            margin: 20px 0;
+        }
+        .category-select {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            width: 200px;
+        }
+        .filter-section {
+            margin: 20px 0;
+        }
+        #category-filter {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            background-color: white;
+            min-width: 200px;
+            cursor: pointer;
+        }
+        #category-filter option {
+            padding: 8px;
+            background-color: white;
+        }
+        #category-filter:focus {
+            outline: none;
+            border-color: #0A85EA;
+        }
+        #expenses-table {
+            margin-top: 20px;
+            clear: both;
+        }
+        .display {
+            width: 100% !important;
+            margin: 20px 0;
+        }
+        .display th, .display td {
+            padding: 12px 8px !important;
+        }
+        .dt-body-right {
+            text-align: right !important;
+        }
+        .dt-body-left {
+            text-align: left !important;
+        }
+        .dataTables_wrapper {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Expense Analysis</h1>
+            <a href="/" class="back-button">Back to Home</a>
+        </div>
+
+        <div class="summary-cards">
+            <div class="summary-card">
+                <h3>Total Expenses</h3>
+                <div class="summary-value" id="total-expenses">Loading...</div>
+            </div>
+            <div class="summary-card">
+                <h3>Monthly Average</h3>
+                <div class="summary-value" id="avg-monthly">Loading...</div>
+            </div>
+            <div class="summary-card">
+                <h3>Highest Category</h3>
+                <div class="summary-value" id="highest-category">Loading...</div>
+            </div>
+        </div>
+
+        <div class="filter-options">
+            <select id="category-filter" class="category-select">
+                <option value="all">All Categories</option>
+            </select>
+        </div>
+
+        <div id="monthly-chart" style="width:100%; margin-bottom: 40px;"></div>
+        <div id="expenses-table"></div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            let expensesData = null;
+            let table = null;
+
+            // Load expenses summary data
+            $.ajax({
+                url: '/api/expenses/summary',
+                method: 'GET',
+                success: function(data) {
+                    expensesData = data;
+                    updateDashboard(data);
+                    
+                    // Populate category filter
+                    const categories = ['all', ...data.categories.map(c => c.category)];
+                    const filterSelect = $('#category-filter');
+                    categories.forEach(category => {
+                        filterSelect.append(`<option value="${category}">${category === 'all' ? 'All Categories' : category}</option>`);
+                    });
+                }
+            });
+
+            // Category filter change handler
+            $('#category-filter').on('change', function() {
+                const selectedCategory = $(this).val();
+                
+                if (!expensesData) return;
+                
+                if (selectedCategory === 'all') {
+                    updateDashboard(expensesData);
+                } else {
+                    const filteredData = {
+                        ...expensesData,
+                        transactions: expensesData.transactions.filter(t => t.category === selectedCategory)
+                    };
+                    
+                    // Recalculate totals for filtered data
+                    const totalAmount = filteredData.transactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+                    filteredData.total_expenses = totalAmount;
+                    filteredData.monthly_average = totalAmount / 12;
+                    filteredData.highest_category = selectedCategory;
+                    
+                    updateDashboard(filteredData);
+                }
+            });
+
+            function updateDashboard(data) {
+                // Update summary cards
+                $('#total-expenses').text(`$${data.total_expenses.toFixed(2)}`);
+                $('#avg-monthly').text(`$${data.monthly_average.toFixed(2)}`);
+                $('#highest-category').text(data.highest_category);
+
+                // Update table
+                updateTable(data);
+
+                // Update chart
+                updateChart(data);
+            }
+
+            function updateTable(data) {
+                if (table) {
+                    table.destroy();
+                }
+
+                const selectedCategory = $('#category-filter').val();
+                const transactions = data.transactions.filter(t => 
+                    selectedCategory === 'all' || t.category === selectedCategory
+                );
+
+                let tableHtml = '<table class="display" style="width:100%"><thead><tr>';
+                const headers = ['Date', 'Name', 'Category', 'Amount', '% of Category'];
+                headers.forEach(header => {
+                    tableHtml += `<th style="text-align: ${header === 'Amount' || header === '% of Category' ? 'right' : 'left'}">${header}</th>`;
+                });
+                tableHtml += '</tr></thead><tbody>';
+
+                transactions.forEach(row => {
+                    tableHtml += `<tr>
+                        <td>${new Date(row.date).toLocaleDateString()}</td>
+                        <td>${row.name}</td>
+                        <td>${row.category}</td>
+                        <td style="text-align: right" class="amount-negative">$${Math.abs(row.amount).toFixed(2)}</td>
+                        <td style="text-align: right">${row.percentage.toFixed(2)}%</td>
+                    </tr>`;
+                });
+                tableHtml += '</tbody></table>';
+
+                $('#expenses-table').html(tableHtml);
+
+                table = $('.display').DataTable({
+                    order: [[0, 'desc']],
+                    pageLength: 25,
+                    dom: 'Bfrtip',
+                    buttons: ['csv', 'excel'],
+                    columnDefs: [
+                        { className: "dt-body-left", targets: [0,1,2] },
+                        { className: "dt-body-right", targets: [3,4] }
+                    ]
+                });
+            }
+
+            function updateChart(data) {
+                const selectedCategory = $('#category-filter').val();
+                
+                $.ajax({
+                    url: '/api/expenses/monthly',
+                    method: 'GET',
+                    data: { 
+                        category: selectedCategory,
+                        start_date: new Date(new Date().setFullYear(new Date().getFullYear() - 1)).toISOString(),
+                        end_date: new Date().toISOString()
+                    },
+                    success: function(chartData) {
+                        // Format amounts to be positive for display
+                        const amounts = chartData.amounts.map(amount => Math.abs(amount));
+                        
+                        const trace = {
+                            x: chartData.months,
+                            y: amounts,
+                            type: 'bar',
+                            marker: {
+                                color: '#0A85EA'
+                            },
+                            text: amounts.map(val => `$${val.toFixed(2)}`),
+                            textposition: 'auto',
+                        };
+
+                        const layout = {
+                            title: {
+                                text: selectedCategory === 'all' ? 
+                                    'Monthly Expenses - All Categories' : 
+                                    `Monthly Expenses - ${selectedCategory}`,
+                                font: {
+                                    size: 18
+                                }
+                            },
+                            xaxis: { 
+                                title: 'Month',
+                                tickangle: -45
+                            },
+                            yaxis: { 
+                                title: 'Amount',
+                                tickformat: '$,.2f'
+                            },
+                            bargap: 0.3,
+                            height: 400,
+                            margin: {
+                                b: 100, // increase bottom margin for x-axis labels
+                                t: 50,  // top margin
+                                l: 80,  // left margin
+                                r: 40   // right margin
+                            }
+                        };
+
+                        const config = {
+                            responsive: true,
+                            displayModeBar: false
+                        };
+
+                        Plotly.newPlot('monthly-chart', [trace], layout, config);
+                    }
+                });
+            }
+
+            // Populate category filter
+            $.ajax({
+                url: '/api/categories',
+                method: 'GET',
+                success: function(response) {
+                    const categoryFilter = $('#category-filter');
+                    categoryFilter.empty();
+                    categoryFilter.append('<option value="all">All Categories</option>');
+                    
+                    response.categories.forEach(category => {
+                        categoryFilter.append(`<option value="${category}">${category}</option>`);
+                    });
+                }
+            });
+
+            // Add change handler for the filter
+            $('#category-filter').change(function() {
+                updateChart();
+                updateTable();
+            });
+        });
+    </script>
+</body>
+</html> 

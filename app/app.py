@@ -18,6 +18,8 @@ from financial_data.utils.db_connection import get_db_connection
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
 from plaid.model.item_remove_request import ItemRemoveRequest
 from psycopg2.extras import RealDictCursor
+from sqlalchemy import text
+from dateutil.relativedelta import relativedelta
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'  # Change this to a secure random key
@@ -585,7 +587,189 @@ def update_transaction_group():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/expenses')
+def expenses():
+    return render_template('expenses.html')
 
+@app.route('/api/expenses/summary')
+def expenses_summary():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Get last 12 months
+        end_date = datetime.now()
+        start_date = end_date - relativedelta(months=11)
+        
+        query = """
+        WITH filtered_transactions AS (
+            SELECT 
+                t.transaction_id,
+                t.name,
+                t.category,
+                t.amount,
+                t.date
+            FROM transactions t
+            WHERE t.amount > 0
+            AND t.date BETWEEN %s AND %s
+            AND LOWER(COALESCE(t.category, '')) NOT LIKE '%%transfer%%'
+        ),
+        category_totals AS (
+            SELECT 
+                category,
+                SUM(amount) as category_total
+            FROM filtered_transactions
+            GROUP BY category
+        ),
+        total_amount AS (
+            SELECT SUM(amount) as grand_total 
+            FROM filtered_transactions
+        )
+        SELECT 
+            ft.transaction_id,
+            ft.name,
+            ft.category,
+            ft.amount,
+            ft.date,
+            (ft.amount / NULLIF(ct.category_total, 0) * 100) as category_percentage
+        FROM filtered_transactions ft
+        LEFT JOIN category_totals ct ON ft.category = ct.category
+        CROSS JOIN total_amount
+        ORDER BY ft.date DESC, ft.amount DESC
+        """
+        
+        cur.execute(query, (start_date, end_date))
+        results = cur.fetchall()
+        
+        # Calculate summary statistics
+        total_expenses = sum(abs(float(row[3])) for row in results)
+        monthly_average = total_expenses / 12 if results else 0
+        
+        # Find highest category
+        category_totals = {}
+        for row in results:
+            category = row[2] or 'Uncategorized'
+            amount = abs(float(row[3]))
+            category_totals[category] = category_totals.get(category, 0) + amount
+        
+        highest_category = max(category_totals.items(), key=lambda x: x[1])[0] if category_totals else ''
+        
+        return jsonify({
+            'total_expenses': total_expenses,
+            'monthly_average': monthly_average,
+            'highest_category': highest_category,
+            'transactions': [{
+                'transaction_id': row[0],
+                'name': row[1],
+                'category': row[2] or 'Uncategorized',
+                'amount': abs(float(row[3])),
+                'date': row[4].isoformat(),
+                'percentage': float(row[5] or 0)
+            } for row in results]
+        })
+        
+    except Exception as e:
+        print(f"Error in expenses_summary: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/api/expenses/monthly')
+def expenses_monthly():
+    category = request.args.get('category', 'all')
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Get last 12 months
+        end_date = datetime.now()
+        start_date = end_date - relativedelta(months=11)
+        
+        if category != 'all':
+            query = """
+            SELECT 
+                DATE_TRUNC('month', d.date) as month,
+                COALESCE(SUM(t.amount), 0) as total_amount
+            FROM (
+                SELECT generate_series(
+                    DATE_TRUNC('month', %s::timestamp),
+                    DATE_TRUNC('month', %s::timestamp),
+                    '1 month'
+                ) as date
+            ) d
+            LEFT JOIN transactions t ON 
+                DATE_TRUNC('month', t.date) = d.date
+                AND t.amount > 0
+                AND category = %s
+            GROUP BY DATE_TRUNC('month', d.date)
+            ORDER BY DATE_TRUNC('month', d.date)
+            """
+            cur.execute(query, (start_date, end_date, category))
+        else:
+            query = """
+            SELECT 
+                DATE_TRUNC('month', d.date) as month,
+                COALESCE(SUM(t.amount), 0) as total_amount
+            FROM (
+                SELECT generate_series(
+                    DATE_TRUNC('month', %s::timestamp),
+                    DATE_TRUNC('month', %s::timestamp),
+                    '1 month'
+                ) as date
+            ) d
+            LEFT JOIN transactions t ON 
+                DATE_TRUNC('month', t.date) = d.date
+                AND t.amount > 0
+            GROUP BY DATE_TRUNC('month', d.date)
+            ORDER BY DATE_TRUNC('month', d.date)
+            """
+            cur.execute(query, (start_date, end_date))
+            
+        results = cur.fetchall()
+        
+        months = []
+        amounts = []
+        
+        for row in results:
+            months.append(row[0].strftime('%B %Y'))
+            amounts.append(float(row[1]))
+            
+        return jsonify({
+            'months': months,
+            'amounts': amounts
+        })
+        
+    except Exception as e:
+        print(f"Error in expenses_monthly: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/api/categories')
+def get_categories():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        query = """
+        SELECT DISTINCT category 
+        FROM transactions 
+        WHERE amount > 0 
+        AND category IS NOT NULL 
+        AND LOWER(COALESCE(category, '')) NOT LIKE '%transfer%'
+        ORDER BY category
+        """
+        cur.execute(query)
+        categories = [row[0] for row in cur.fetchall()]
+        return jsonify({'categories': categories})
+    except Exception as e:
+        print(f"Error getting categories: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
