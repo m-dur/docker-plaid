@@ -311,15 +311,11 @@
                                 x: chartData.dates,
                                 y: chartData.amounts,
                                 type: 'scatter',
-                                mode: 'lines+text',
+                                mode: 'lines',
                                 line: {
                                     color: '#0A85EA',
                                     width: 2
                                 },
-                                text: chartData.amounts.map((val, idx) => 
-                                    chartData.dates[idx] === currentDate ? `$${val.toFixed(2)}` : ''
-                                ),
-                                textposition: 'top',
                                 name: 'Current Month'
                             };
                             
@@ -343,16 +339,12 @@
                                 x: chartData.dates,
                                 y: chartData.prior_amounts,
                                 type: 'scatter',
-                                mode: 'lines+text',
+                                mode: 'lines',
                                 line: {
                                     color: '#FFA500',
                                     width: 2,
                                     dash: 'dot'
                                 },
-                                text: chartData.prior_amounts.map((val, idx) => 
-                                    chartData.dates[idx] === currentDate ? `$${val.toFixed(2)}` : ''
-                                ),
-                                textposition: 'top',
                                 name: 'Prior Month'
                             };
                             
@@ -392,7 +384,45 @@
                                 legend: {
                                     orientation: 'h',
                                     y: -0.2
-                                }
+                                },
+                                annotations: [
+                                    {
+                                        x: currentDate,
+                                        y: chartData.amounts[currentIndex],
+                                        text: `<b>$${chartData.amounts[currentIndex].toFixed(2)}</b><br>Current Month`,
+                                        showarrow: true,
+                                        arrowhead: 2,
+                                        ax: 40,
+                                        ay: -40,
+                                        bgcolor: 'white',
+                                        bordercolor: '#0A85EA',
+                                        borderwidth: 1,
+                                        borderpad: 4,
+                                        font: { size: 12 },
+                                        xanchor: 'left',
+                                        arrowcolor: '#666',
+                                        arrowwidth: 1,
+                                        arrowsize: 0.8
+                                    },
+                                    {
+                                        x: currentDate,
+                                        y: chartData.prior_amounts[currentIndex],
+                                        text: `<b>$${chartData.prior_amounts[currentIndex].toFixed(2)}</b><br>Prior Month`,
+                                        showarrow: true,
+                                        arrowhead: 2,
+                                        ax: -40,
+                                        ay: -40,
+                                        bgcolor: 'white',
+                                        bordercolor: '#FFA500',
+                                        borderwidth: 1,
+                                        borderpad: 4,
+                                        font: { size: 12 },
+                                        xanchor: 'right',
+                                        arrowcolor: '#666',
+                                        arrowwidth: 1,
+                                        arrowsize: 0.8
+                                    }
+                                ]
                             };
                             
                             Plotly.newPlot('monthly-chart', [trace1, trace2, trace3, trace4], layout);
