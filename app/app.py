@@ -768,73 +768,61 @@ def expenses_daily():
     cur = conn.cursor()
     
     try:
-        # Get all days in current month
         current_month = datetime.strptime(month, '%Y-%m')
+        prior_month = current_month - relativedelta(months=1)
+        
         _, last_day = calendar.monthrange(current_month.year, current_month.month)
-        start_date = current_month.replace(day=1)
-        end_date = current_month.replace(day=last_day)
+        _, prior_last_day = calendar.monthrange(prior_month.year, prior_month.month)
         
+        current_start = current_month.replace(day=1)
+        current_end = current_month.replace(day=last_day)
+        prior_start = prior_month.replace(day=1)
+        prior_end = prior_month.replace(day=prior_last_day)
+        
+        # Add prior month data to the response
+        base_query = """
+        WITH RECURSIVE dates AS (
+            SELECT generate_series(%s::date, %s::date, '1 day'::interval)::date AS date
+        ),
+        daily_totals AS (
+            SELECT date::date, COALESCE(SUM(amount), 0) as daily_amount
+            FROM transactions 
+            WHERE date >= %s AND date <= %s
+            AND amount > 0
+            AND LOWER(COALESCE(category, '')) NOT LIKE '%%transfer%%'
+            {category_filter}
+            GROUP BY date::date
+        )
+        SELECT 
+            d.date,
+            COALESCE(SUM(dt.daily_amount) OVER (ORDER BY d.date), 0) as cumulative_amount
+        FROM dates d
+        LEFT JOIN daily_totals dt ON d.date = dt.date
+        ORDER BY d.date;
+        """
+        
+        category_filter = "AND category = %s" if category != 'all' else ""
+        query = base_query.format(category_filter=category_filter)
+        
+        # Get current month data
+        params = [current_start, current_end, current_start, current_end]
         if category != 'all':
-            query = """
-            WITH RECURSIVE dates AS (
-                SELECT generate_series(
-                    %s::date,
-                    %s::date,
-                    '1 day'::interval
-                )::date AS date
-            ),
-            daily_totals AS (
-                SELECT 
-                    t.date::date,
-                    COALESCE(SUM(t.amount), 0) as daily_amount
-                FROM transactions t
-                WHERE t.date >= %s 
-                AND t.date <= %s
-                AND category = %s
-                AND t.amount > 0
-                GROUP BY t.date::date
-            )
-            SELECT 
-                d.date,
-                SUM(dt.daily_amount) OVER (ORDER BY d.date) as cumulative_amount
-            FROM dates d
-            LEFT JOIN daily_totals dt ON d.date = dt.date
-            ORDER BY d.date;
-            """
-            cur.execute(query, (start_date, end_date, start_date, end_date, category))
-        else:
-            query = """
-            WITH RECURSIVE dates AS (
-                SELECT generate_series(
-                    %s::date,
-                    %s::date,
-                    '1 day'::interval
-                )::date AS date
-            ),
-            daily_totals AS (
-                SELECT 
-                    t.date::date,
-                    COALESCE(SUM(t.amount), 0) as daily_amount
-                FROM transactions t
-                WHERE t.date >= %s 
-                AND t.date <= %s
-                AND t.amount > 0
-                AND category <> 'Transfer'
-                GROUP BY t.date::date
-            )
-            SELECT 
-                d.date,
-                SUM(dt.daily_amount) OVER (ORDER BY d.date) as cumulative_amount
-            FROM dates d
-            LEFT JOIN daily_totals dt ON d.date = dt.date
-            ORDER BY d.date;
-            """
-            cur.execute(query, (start_date, end_date, start_date, end_date))
+            params.append(category)
+        cur.execute(query, tuple(params))
+        current_results = cur.fetchall()
         
-        results = cur.fetchall()
+        # Get prior month data
+        params = [prior_start, prior_end, prior_start, prior_end]
+        if category != 'all':
+            params.append(category)
+        cur.execute(query, tuple(params))
+        prior_results = cur.fetchall()
+        
         return jsonify({
-            'dates': [row[0].strftime('%Y-%m-%d') for row in results],
-            'amounts': [float(row[1]) for row in results]
+            'dates': [row[0].strftime('%Y-%m-%d') for row in current_results],
+            'amounts': [float(row[1]) for row in current_results],
+            'prior_dates': [row[0].strftime('%Y-%m-%d') for row in prior_results],
+            'prior_amounts': [float(row[1]) for row in prior_results]
         })
         
     except Exception as e:

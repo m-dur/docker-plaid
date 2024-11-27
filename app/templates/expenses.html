@@ -311,22 +311,62 @@
                                 x: chartData.dates,
                                 y: chartData.amounts,
                                 type: 'scatter',
-                                mode: 'lines',
+                                mode: 'lines+text',
                                 line: {
                                     color: '#0A85EA',
                                     width: 2
                                 },
-                                name: 'Cumulative Spend'
+                                text: chartData.amounts.map((val, idx) => 
+                                    chartData.dates[idx] === currentDate ? `$${val.toFixed(2)}` : ''
+                                ),
+                                textposition: 'top',
+                                name: 'Current Month'
                             };
                             
                             const trace2 = {
                                 x: [currentDate],
                                 y: [chartData.amounts[currentIndex]],
                                 type: 'bar',
+                                width: 0.5,
                                 marker: {
-                                    color: '#0A85EA'
+                                    color: '#0A85EA',
+                                    opacity: 0.7,
+                                    line: {
+                                        color: '#0A85EA',
+                                        width: 2
+                                    }
                                 },
                                 name: 'Current Day'
+                            };
+                            
+                            const trace3 = {
+                                x: chartData.dates,
+                                y: chartData.prior_amounts,
+                                type: 'scatter',
+                                mode: 'lines+text',
+                                line: {
+                                    color: '#FFA500',
+                                    width: 2,
+                                    dash: 'dot'
+                                },
+                                text: chartData.prior_amounts.map((val, idx) => 
+                                    chartData.dates[idx] === currentDate ? `$${val.toFixed(2)}` : ''
+                                ),
+                                textposition: 'top',
+                                name: 'Prior Month'
+                            };
+                            
+                            const trace4 = {
+                                x: [currentDate, currentDate],
+                                y: [0, chartData.amounts[currentIndex]],
+                                type: 'scatter',
+                                mode: 'lines',
+                                line: {
+                                    color: '#0A85EA',
+                                    width: 2,
+                                    dash: 'solid'
+                                },
+                                showlegend: false
                             };
                             
                             const layout = {
@@ -348,10 +388,14 @@
                                     t: 50,
                                     l: 80,
                                     r: 40
+                                },
+                                legend: {
+                                    orientation: 'h',
+                                    y: -0.2
                                 }
                             };
                             
-                            Plotly.newPlot('monthly-chart', [trace1, trace2], layout);
+                            Plotly.newPlot('monthly-chart', [trace1, trace2, trace3, trace4], layout);
                         }
                     });
                 } else {
