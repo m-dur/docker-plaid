@@ -721,6 +721,7 @@ def expenses_monthly():
             LEFT JOIN transactions t ON 
                 DATE_TRUNC('month', t.date) = d.date
                 AND t.amount > 0
+                AND category <> 'Transfer'
             GROUP BY DATE_TRUNC('month', d.date)
             ORDER BY DATE_TRUNC('month', d.date)
             """

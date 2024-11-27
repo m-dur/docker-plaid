@@ -263,17 +263,23 @@
                         end_date: new Date().toISOString()
                     },
                     success: function(chartData) {
-                        // Format amounts to be positive for display
-                        const amounts = chartData.amounts.map(amount => Math.abs(amount));
+                        // Filter out months with zero amounts
+                        const nonZeroData = chartData.months.reduce((acc, month, index) => {
+                            if (chartData.amounts[index] !== 0) {
+                                acc.months.push(month);
+                                acc.amounts.push(Math.abs(chartData.amounts[index]));
+                            }
+                            return acc;
+                        }, { months: [], amounts: [] });
                         
                         const trace = {
-                            x: chartData.months,
-                            y: amounts,
+                            x: nonZeroData.months,
+                            y: nonZeroData.amounts,
                             type: 'bar',
                             marker: {
                                 color: '#0A85EA'
                             },
-                            text: amounts.map(val => `$${val.toFixed(2)}`),
+                            text: nonZeroData.amounts.map(val => `$${val.toFixed(2)}`),
                             textposition: 'auto',
                         };
 
@@ -297,10 +303,10 @@
                             bargap: 0.3,
                             height: 400,
                             margin: {
-                                b: 100, // increase bottom margin for x-axis labels
-                                t: 50,  // top margin
-                                l: 80,  // left margin
-                                r: 40   // right margin
+                                b: 100,
+                                t: 50,
+                                l: 80,
+                                r: 40
                             }
                         };
 
