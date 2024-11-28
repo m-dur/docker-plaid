@@ -274,12 +274,22 @@
 
                 table = $('.display').DataTable({
                     order: [[0, 'desc']],
-                    pageLength: 25,
+                    paging: false,
                     dom: 'Bfrtip',
                     buttons: ['csv', 'excel'],
                     columnDefs: [
                         { className: "dt-body-left", targets: [0,1,2] },
-                        { className: "dt-body-right", targets: [3,4] }
+                        { className: "dt-body-right", targets: [3,4] },
+                        { 
+                            targets: 0,
+                            type: 'date',
+                            render: function(data, type, row) {
+                                if (type === 'display') {
+                                    return new Date(data).toLocaleDateString();
+                                }
+                                return new Date(data).getTime();
+                            }
+                        }
                     ]
                 });
             }
