@@ -1,0 +1,202 @@
+<html></html>
+<head>
+    <link href='https://fonts.googleapis.com/css?family=Roboto' rel='stylesheet'>
+    <style>
+        body { 
+            background-color: #B1EEFC; 
+            font-family: 'Roboto', sans-serif; 
+        }
+        .container {
+            width: 95%;
+            margin: 20px auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .back-button {
+            background-color: #0A85EA;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        #monthly-chart {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            margin-bottom: 40px;
+            clear: both;
+        }
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .summary-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .summary-card h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+        .summary-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #0A85EA;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Net Income Analysis</h1>
+            <a href="/" class="back-button">Back to Home</a>
+        </div>
+
+        <div class="summary-cards">
+            <div class="summary-card">
+                <h3>Cumulative Net Income</h3>
+                <div class="summary-value" id="cumulative-net">Loading...</div>
+            </div>
+        </div>
+
+        <div id="monthly-chart" style="width:100%; margin-bottom: 40px;"></div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            function updateChart() {
+                $.ajax({
+                    url: '/api/net_income/monthly',
+                    method: 'GET',
+                    data: { 
+                        start_date: new Date(new Date().setFullYear(new Date().getFullYear() - 1)).toISOString(),
+                        end_date: new Date().toISOString()
+                    },
+                    success: function(chartData) {
+                        // Format net income values to k format
+                        const formatNetIncome = (value) => {
+                            if (Math.abs(value) >= 1000) {
+                                return (value / 1000).toFixed(1) + 'k';
+                            }
+                            return value.toFixed(0);
+                        };
+
+                        const incomeTrace = {
+                            x: chartData.months,
+                            y: chartData.income,
+                            type: 'scatter',
+                            mode: 'lines',
+                            name: 'Income',
+                            line: {
+                                color: '#0A85EA',
+                                width: 2
+                            }
+                        };
+                        
+                        const expenseTrace = {
+                            x: chartData.months,
+                            y: chartData.expenses,
+                            type: 'scatter',
+                            mode: 'lines',
+                            name: 'Expenses',
+                            line: {
+                                color: '#666666',
+                                width: 2
+                            }
+                        };
+
+                        // Create annotations for net income
+                        const annotations = chartData.months.map((month, i) => ({
+                            x: month,
+                            y: Math.max(chartData.income[i], chartData.expenses[i]),
+                            text: formatNetIncome(chartData.net[i]),
+                            showarrow: false,
+                            yshift: 15,
+                            font: {
+                                size: 12,
+                                color: chartData.net[i] >= 0 ? '#28a745' : '#dc3545'
+                            }
+                        }));
+                        
+                        const layout = {
+                            title: {
+                                text: '<b>Income & Expenses</b>',
+                                font: { 
+                                    size: 24,
+                                    family: 'Roboto, sans-serif',
+                                    color: '#333333'
+                                },
+                                y: 0.95
+                            },
+                            xaxis: { 
+                                title: {
+                                    text: '<b>Month</b>',
+                                    font: {
+                                        size: 14,
+                                        family: 'Roboto, sans-serif'
+                                    }
+                                },
+                                tickangle: -45
+                            },
+                            yaxis: { 
+                                title: {
+                                    text: '<b>Amount ($)</b>',
+                                    font: {
+                                        size: 14,
+                                        family: 'Roboto, sans-serif'
+                                    }
+                                },
+                                tickformat: '$,.2f'
+                            },
+                            height: 600,
+                            margin: {
+                                b: 100,
+                                t: 80,
+                                l: 80,
+                                r: 40
+                            },
+                            hovermode: 'x unified',
+                            annotations: annotations,
+                            showlegend: true,
+                            legend: {
+                                x: 0.5,
+                                y: 1.1,
+                                xanchor: 'center',
+                                orientation: 'h'
+                            },
+                            paper_bgcolor: 'white',
+                            plot_bgcolor: '#f8f9fa'
+                        };
+                        
+                        Plotly.newPlot('monthly-chart', [incomeTrace, expenseTrace], layout);
+
+                        // Calculate cumulative net income
+                        const cumulativeNet = chartData.net.reduce((sum, val) => sum + val, 0);
+                        $('#cumulative-net').text('$' + cumulativeNet.toFixed(2));
+                    }
+                });
+            }
+
+            // Initial chart update
+            updateChart();
+        });
+    </script>
+</body>
+</html>

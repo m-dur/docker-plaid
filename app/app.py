@@ -1142,6 +1142,247 @@ def expenses_group_monthly():
         cur.close()
         conn.close()
 
+@app.route('/income')
+def income():
+    return render_template('income.html')
+
+@app.route('/api/income/summary')
+def income_summary():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Get filter parameters
+        category = request.args.get('category', 'all')
+        month = request.args.get('month', 'all')
+        
+        # Get last 12 months
+        end_date = datetime.now()
+        start_date = end_date - relativedelta(months=11)
+        
+        base_conditions = """
+            WHERE t.amount < 0
+            AND t.date BETWEEN %s AND %s
+            AND LOWER(COALESCE(t.category, '')) NOT LIKE '%%transfer%%'
+        """
+        
+        params = [start_date, end_date]
+        
+        if category != 'all':
+            base_conditions += " AND t.category = %s"
+            params.append(category)
+            
+        if month != 'all':
+            base_conditions += " AND TO_CHAR(t.date, 'YYYY-MM') = %s"
+            params.append(month)
+        
+        query = f"""
+        WITH filtered_transactions AS (
+            SELECT 
+                t.transaction_id,
+                t.name,
+                t.category,
+                ABS(t.amount) as amount,
+                t.date
+            FROM transactions t
+            {base_conditions}
+        ),
+        category_totals AS (
+            SELECT 
+                category,
+                SUM(amount) as category_total
+            FROM filtered_transactions
+            GROUP BY category
+        )
+        SELECT 
+            ft.transaction_id,
+            ft.name,
+            ft.category,
+            ft.amount,
+            ft.date,
+            (ft.amount / NULLIF(ct.category_total, 0) * 100) as category_percentage
+        FROM filtered_transactions ft
+        LEFT JOIN category_totals ct ON ft.category = ct.category
+        ORDER BY ft.date DESC, ft.amount DESC
+        """
+        
+        cur.execute(query, tuple(params))
+        results = cur.fetchall()
+        
+        # Calculate summary statistics
+        total_income = sum(float(row[3]) for row in results)
+        monthly_average = total_income / 12 if results else 0
+        
+        # Find highest income category
+        category_totals = {}
+        for row in results:
+            category = row[2] or 'Uncategorized'
+            amount = float(row[3])
+            category_totals[category] = category_totals.get(category, 0) + amount
+        
+        highest_category = max(category_totals.items(), key=lambda x: x[1])[0] if category_totals else ''
+        
+        return jsonify({
+            'total_income': total_income,
+            'monthly_average': monthly_average,
+            'highest_category': highest_category,
+            'transactions': [{
+                'transaction_id': row[0],
+                'name': row[1],
+                'category': row[2] or 'Uncategorized',
+                'amount': float(row[3]),
+                'date': row[4].isoformat(),
+                'percentage': float(row[5] or 0)
+            } for row in results]
+        })
+        
+    except Exception as e:
+        print(f"Error in income_summary: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/api/income/monthly')
+def income_monthly():
+    category = request.args.get('category', 'all')
+    start_date = datetime.fromisoformat(request.args.get('start_date').replace('Z', '+00:00'))
+    end_date = datetime.fromisoformat(request.args.get('end_date').replace('Z', '+00:00'))
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        if category != 'all':
+            query = """
+            SELECT 
+                DATE_TRUNC('month', d.date) as month,
+                COALESCE(SUM(ABS(t.amount)), 0) as total_amount
+            FROM (
+                SELECT generate_series(
+                    DATE_TRUNC('month', %s::timestamp),
+                    DATE_TRUNC('month', %s::timestamp),
+                    '1 month'
+                ) as date
+            ) d
+            LEFT JOIN transactions t ON 
+                DATE_TRUNC('month', t.date) = d.date
+                AND t.amount < 0
+                AND category = %s
+            GROUP BY DATE_TRUNC('month', d.date)
+            ORDER BY DATE_TRUNC('month', d.date)
+            """
+            cur.execute(query, (start_date, end_date, category))
+        else:
+            query = """
+            SELECT 
+                DATE_TRUNC('month', d.date) as month,
+                COALESCE(SUM(ABS(t.amount)), 0) as total_amount
+            FROM (
+                SELECT generate_series(
+                    DATE_TRUNC('month', %s::timestamp),
+                    DATE_TRUNC('month', %s::timestamp),
+                    '1 month'
+                ) as date
+            ) d
+            LEFT JOIN transactions t ON 
+                DATE_TRUNC('month', t.date) = d.date
+                AND t.amount < 0
+                AND LOWER(COALESCE(category, '')) NOT LIKE '%%transfer%%'
+            GROUP BY DATE_TRUNC('month', d.date)
+            ORDER BY DATE_TRUNC('month', d.date)
+            """
+            cur.execute(query, (start_date, end_date))
+            
+        results = cur.fetchall()
+        
+        months = []
+        amounts = []
+        
+        for row in results:
+            months.append(row[0].strftime('%B %Y'))
+            amounts.append(float(row[1]))
+            
+        return jsonify({
+            'months': months,
+            'amounts': amounts
+        })
+        
+    except Exception as e:
+        print(f"Error in income_monthly: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/net_income')
+def net_income():
+    return render_template('net_income.html')
+
+@app.route('/api/net_income/monthly')
+def net_income_monthly():
+    start_date = datetime.fromisoformat(request.args.get('start_date').replace('Z', '+00:00'))
+    end_date = datetime.fromisoformat(request.args.get('end_date').replace('Z', '+00:00'))
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        query = """
+        WITH monthly_data AS (
+            SELECT 
+                DATE_TRUNC('month', d.date) as month,
+                COALESCE(SUM(CASE WHEN t.amount < 0 THEN ABS(t.amount) ELSE 0 END), 0) as income,
+                COALESCE(SUM(CASE WHEN t.amount > 0 THEN t.amount ELSE 0 END), 0) as expenses
+            FROM (
+                SELECT generate_series(
+                    DATE_TRUNC('month', %s::timestamp),
+                    DATE_TRUNC('month', %s::timestamp),
+                    '1 month'
+                ) as date
+            ) d
+            LEFT JOIN transactions t ON 
+                DATE_TRUNC('month', t.date) = d.date
+                AND LOWER(COALESCE(t.category, '')) NOT LIKE '%%transfer%%'
+            GROUP BY DATE_TRUNC('month', d.date)
+            ORDER BY DATE_TRUNC('month', d.date)
+        )
+        SELECT 
+            to_char(month, 'Month YYYY') as month,
+            income,
+            expenses,
+            (income - expenses) as net_income
+        FROM monthly_data
+        """
+        
+        cur.execute(query, (start_date, end_date))
+        results = cur.fetchall()
+        
+        months = []
+        income = []
+        expenses = []
+        net = []
+        
+        for row in results:
+            months.append(row[0].strip())
+            income.append(float(row[1]))
+            expenses.append(float(row[2]))
+            net.append(float(row[3]))
+            
+        return jsonify({
+            'months': months,
+            'income': income,
+            'expenses': expenses,
+            'net': net
+        })
+        
+    except Exception as e:
+        print(f"Error in net_income_monthly: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
 

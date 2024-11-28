@@ -1,0 +1,170 @@
+<html></html>
+<head>
+    <link href='https://fonts.googleapis.com/css?family=Roboto' rel='stylesheet'>
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.css">
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.dataTables.min.css">
+    <style>
+        /* Copy styles from expenses.html */
+        /* Reference lines 7-134 from expenses.html */
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Income Analysis</h1>
+            <a href="/" class="back-button">Back to Home</a>
+        </div>
+
+        <div class="summary-cards">
+            <div class="summary-card">
+                <h3>Total Income</h3>
+                <div class="summary-value" id="total-income">Loading...</div>
+            </div>
+            <div class="summary-card">
+                <h3>Monthly Average</h3>
+                <div class="summary-value" id="monthly-average">Loading...</div>
+            </div>
+            <div class="summary-card">
+                <h3>Highest Category</h3>
+                <div class="summary-value" id="highest-category">Loading...</div>
+            </div>
+        </div>
+
+        <div id="monthly-chart" style="width:100%; margin-bottom: 40px;"></div>
+        <table id="income-table" class="display" style="width:100%">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Name</th>
+                    <th>Category</th>
+                    <th>Amount</th>
+                    <th>% of Category</th>
+                </tr>
+            </thead>
+            <tbody>
+            </tbody>
+        </table>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            let incomeData = null;
+            let table = null;
+
+            // Initialize dashboard
+            updateDashboard();
+
+            function updateDashboard() {
+                $.ajax({
+                    url: '/api/income/summary',
+                    method: 'GET',
+                    success: function(data) {
+                        incomeData = data;
+                        
+                        $('#total-income').text(`$${data.total_income.toFixed(2)}`);
+                        $('#monthly-average').text(`$${data.monthly_average.toFixed(2)}`);
+                        $('#highest-category').text(data.highest_category);
+
+                        if (table) {
+                            table.destroy();
+                        }
+
+                        table = $('#income-table').DataTable({
+                            data: data.transactions,
+                            columns: [
+                                { 
+                                    data: 'date',
+                                    title: 'Date',
+                                    className: 'dt-body-left'
+                                },
+                                { 
+                                    data: 'name',
+                                    title: 'Name',
+                                    className: 'dt-body-left'
+                                },
+                                { 
+                                    data: 'category',
+                                    title: 'Category',
+                                    className: 'dt-body-left'
+                                },
+                                { 
+                                    data: 'amount',
+                                    title: 'Amount',
+                                    className: 'dt-body-right',
+                                    render: function(data) {
+                                        return `$${Math.abs(data).toFixed(2)}`;
+                                    }
+                                },
+                                { 
+                                    data: 'percentage',
+                                    title: '% of Total',
+                                    className: 'dt-body-right',
+                                    render: function(data) {
+                                        return `${data.toFixed(2)}%`;
+                                    }
+                                }
+                            ],
+                            order: [[0, 'desc']],
+                            pageLength: 25
+                        });
+                    }
+                });
+            }
+
+            function updateChart() {
+                $.ajax({
+                    url: '/api/income/monthly',
+                    method: 'GET',
+                    data: { 
+                        start_date: new Date(new Date().setFullYear(new Date().getFullYear() - 1)).toISOString(),
+                        end_date: new Date().toISOString()
+                    },
+                    success: function(chartData) {
+                        const trace = {
+                            x: chartData.months,
+                            y: chartData.amounts,
+                            type: 'bar',
+                            marker: {
+                                color: '#0A85EA'
+                            },
+                            text: chartData.amounts.map(val => `$${Math.abs(val).toFixed(2)}`),
+                            textposition: 'auto',
+                        };
+                        
+                        const layout = {
+                            title: {
+                                text: 'Monthly Income',
+                                font: { size: 18 }
+                            },
+                            xaxis: { 
+                                title: 'Month',
+                                tickangle: -45
+                            },
+                            yaxis: { 
+                                title: 'Amount',
+                                tickformat: '$,.2f'
+                            },
+                            height: 400,
+                            margin: {
+                                b: 100,
+                                t: 50,
+                                l: 80,
+                                r: 40
+                            }
+                        };
+                        
+                        Plotly.newPlot('monthly-chart', [trace], layout);
+                    }
+                });
+            }
+
+            // Initial chart update
+            updateChart();
+        });
+    </script>
+</body>
+</html>
