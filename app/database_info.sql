@@ -123,7 +123,7 @@ CREATE TABLE transactions (
 
 -- institution cursor
 CREATE TABLE institution_cursors (
-    institution_id VARCHAR(255) PRIMARY KEY REFERENCES institutions(id),
+    institution_id VARCHAR(255) PRIMARY KEY,
     cursor TEXT,
     first_sync_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_sync_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -136,7 +136,7 @@ CREATE TABLE institution_cursors (
 
 -- access tokens
 CREATE TABLE access_tokens (
-    institution_id VARCHAR(255) PRIMARY KEY REFERENCES institutions(id) ON DELETE CASCADE,
+    institution_id VARCHAR(255) PRIMARY KEY,
     access_token TEXT NOT NULL,
     item_id VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -146,3 +146,4 @@ CREATE TABLE access_tokens (
         REFERENCES institutions(id)
         ON DELETE CASCADE
 );
+

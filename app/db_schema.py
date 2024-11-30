@@ -15,7 +15,7 @@ def generate_db_schema():
                     'name', c.column_name,
                     'type', c.data_type,
                     'is_pk', CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END,
-                    'is_fk', CASE WHEN fk.column_name IS NOT NULL THEN true ELSE false END
+                    'is_fk', CASE WHEN fk.column_name IS NOT NULL AND NOT pk.column_name IS NOT NULL THEN true ELSE false END
                 )
                 ORDER BY c.ordinal_position
             ) as columns
