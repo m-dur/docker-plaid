@@ -11,18 +11,7 @@ WHERE table_schema = 'public';
 
 
 -- delete all tables
-DO $$ 
-DECLARE 
-    r RECORD;
-BEGIN
-    -- Disable foreign key checks during deletion
-    EXECUTE 'SET CONSTRAINTS ALL DEFERRED';
-    
-    -- Drop all tables in public schema
-    FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-        EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
-    END LOOP;
-END $$;
+
 
 --delete rows from all tables
 DO $$ 
@@ -56,9 +45,13 @@ select * from institutions;
 select * from category_mappings;
 
 -- deleting rows in table [TESTING]
+DELETE FROM institutions 
+WHERE id = 'ins_10';
 
-
-
+-- modifying tables 
+ALTER TABLE institutions 
+ADD COLUMN 
+ADD COLUMN ;
 
 --checking rows of every table in my database
 

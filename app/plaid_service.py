@@ -25,6 +25,7 @@ from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdReques
 from plaid.model.sandbox_item_fire_webhook_request import SandboxItemFireWebhookRequest
 from plaid.model.webhook_type import WebhookType
 from financial_data.utils.db_connection import get_db_connection
+from psycopg2.extras import RealDictCursor
 
 
 
@@ -97,36 +98,71 @@ def delete_cursor(institution_id):
         conn.close()
 
 def save_access_token(access_token, item_id, institution_id, institution_name):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
     try:
-        with open('access_tokens.json', 'r') as f:
-            tokens = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        tokens = {}
-    
-    # Add connection timestamp if this is a new institution
-    if institution_id not in tokens:
-        connected_at = datetime.now().isoformat()
-    else:
-        connected_at = tokens[institution_id].get('connected_at', datetime.now().isoformat())
-    
-    tokens[institution_id] = {
-        'access_token': access_token,
-        'item_id': item_id,
-        'institution_id': institution_id,
-        'institution_name': institution_name,
-        'created_at': datetime.now().isoformat(),
-        'connected_at': connected_at
-    }
-    
-    with open('access_tokens.json', 'w') as f:
-        json.dump(tokens, f)
+        # Update institutions table
+        cur.execute("""
+            INSERT INTO institutions (id, name)
+            VALUES (%s, %s)
+            ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+        """, (institution_id, institution_name))
+        
+        # Save access token
+        cur.execute("""
+            INSERT INTO access_tokens (institution_id, access_token, item_id)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (institution_id) 
+            DO UPDATE SET 
+                access_token = EXCLUDED.access_token,
+                item_id = EXCLUDED.item_id,
+                last_updated = CURRENT_TIMESTAMP
+        """, (institution_id, access_token, item_id))
+        
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        cur.close()
+        conn.close()
 
 def get_saved_access_tokens():
+    """Get all saved access tokens from database"""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
     try:
-        with open('access_tokens.json', 'r') as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
+        cur.execute("""
+            SELECT 
+                at.institution_id,
+                at.access_token,
+                at.item_id,
+                i.name as institution_name
+            FROM access_tokens at
+            JOIN institutions i ON at.institution_id = i.id
+        """)
+        results = cur.fetchall()
+        
+        # Convert to dictionary format for backward compatibility
+        tokens_data = {}
+        for row in results:
+            tokens_data[row['institution_id']] = {
+                'access_token': row['access_token'],
+                'institution_id': row['institution_id'],
+                'institution_name': row['institution_name'],
+                'item_id': row['item_id']
+            }
+        
+        return tokens_data
+    except Exception as e:
+        print(f"Error getting saved access tokens: {e}")
         return {}
+    finally:
+        cur.close()
+        conn.close()
+
 def get_access_token(public_token):
     client = create_plaid_client()
     exchange_request = ItemPublicTokenExchangeRequest(
@@ -400,21 +436,20 @@ def get_item(access_token):
         return None
 
 def get_access_token_by_item_id(item_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
     try:
-        with open('access_tokens.json', 'r') as f:
-            tokens_data = json.load(f)
-            
-        # Search through tokens to find matching item_id
-        for institution_data in tokens_data.values():
-            access_token = institution_data.get('access_token')
-            if access_token:
-                # Get item info to check item_id
-                item = get_item(access_token)
-                if item and item.item_id == item_id:
-                    return access_token
-        return None
-    except (FileNotFoundError, json.JSONDecodeError):
-        return None
+        cur.execute("""
+            SELECT access_token 
+            FROM access_tokens 
+            WHERE item_id = %s
+        """, (item_id,))
+        result = cur.fetchone()
+        return result[0] if result else None
+    finally:
+        cur.close()
+        conn.close()
 
 def fire_sandbox_webhook(access_token):
     """Fire a test webhook in sandbox mode"""

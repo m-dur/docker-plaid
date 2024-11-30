@@ -26,31 +26,30 @@ app.json_encoder = CustomJSONEncoder
 
 @app.route('/')
 def index():
-    # Get all saved access tokens
-    institutions = []
-    has_access_token = False
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
     try:
-        with open('access_tokens.json', 'r') as f:
-            tokens_data = json.load(f)
-            has_access_token = len(tokens_data) > 0
-            institutions = [
-                {
-                    'name': data.get('institution_name'),
-                    'id': data.get('institution_id')
-                }
-                for data in tokens_data.values()
-            ]
-    except (FileNotFoundError, json.JSONDecodeError):
-        tokens_data = {}
-    
-    link_token = create_and_store_link_token()
-    schema_diagram = generate_db_schema()
-    
-    return render_template('index.html', 
-                         link_token=link_token,
-                         institutions=institutions,
-                         has_access_token=has_access_token,
-                         schema_diagram=schema_diagram)
+        # Get institutions from database
+        cur.execute("""
+            SELECT i.*, at.access_token IS NOT NULL as has_access_token
+            FROM institutions i
+            LEFT JOIN access_tokens at ON i.id = at.institution_id
+        """)
+        institutions = cur.fetchall()
+        has_access_token = any(inst['has_access_token'] for inst in institutions)
+        
+        link_token = create_and_store_link_token()
+        schema_diagram = generate_db_schema()
+        
+        return render_template('index.html', 
+                            link_token=link_token,
+                            institutions=institutions,
+                            has_access_token=has_access_token,
+                            schema_diagram=schema_diagram)
+    finally:
+        cur.close()
+        conn.close()
 
 @app.route('/exchange_public_token', methods=['POST'])
 def exchange_public_token():
@@ -63,19 +62,20 @@ def exchange_public_token():
         
         public_token = request.json['public_token']
         institution_id = request.json['metadata']['institution']['institution_id']
+        institution_name = request.json['metadata']['institution']['name']
         
         client = create_plaid_client()
         exchange_response = client.item_public_token_exchange(
             ItemPublicTokenExchangeRequest(public_token=public_token)
         )
         access_token = exchange_response['access_token']
+        item_id = exchange_response['item_id']
         
         # Get institution info before saving anything
         institution_info = get_institution_info(access_token)
         
         # For new accounts, we should start with a fresh sync
         handler = FinancialDataHandler()
-        # Pass item_info with is_new_account flag instead
         item_info = {
             'institution_id': institution_id,
             'is_new_account': True
@@ -83,22 +83,8 @@ def exchange_public_token():
         success = handler.fetch_and_process_financial_data(access_token, conn=conn, cur=cur, item_info=item_info)
         
         if success:
-            # Only save access token if everything else succeeded
-            tokens_data = {}
-            try:
-                with open('access_tokens.json', 'r') as f:
-                    tokens_data = json.load(f)
-            except (FileNotFoundError, json.JSONDecodeError):
-                tokens_data = {}
-            
-            tokens_data[institution_id] = {
-                'access_token': access_token,
-                'institution_id': institution_id,
-                'institution_name': request.json['metadata']['institution']['name']
-            }
-            
-            with open('access_tokens.json', 'w') as f:
-                json.dump(tokens_data, f)
+            # Save access token to database
+            save_access_token(access_token, item_id, institution_id, institution_name)
             
             # Commit transaction only if everything succeeded
             cur.execute("COMMIT")
@@ -107,7 +93,6 @@ def exchange_public_token():
             raise Exception("Failed to process financial data")
             
     except Exception as e:
-        # Roll back transaction and clean up on any error
         cur.execute("ROLLBACK")
         app.logger.error(f"Error in exchange_public_token: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -118,34 +103,43 @@ def exchange_public_token():
 @app.route('/fetch_financial_data', methods=['POST'])
 def fetch_financial_data():
     try:
-        # Get access tokens
-        tokens_data = {}
-        try:
-            with open('access_tokens.json', 'r') as f:
-                tokens_data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            app.logger.error(f"Error reading access tokens: {str(e)}")
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Get access tokens from database
+        cur.execute("""
+            SELECT 
+                at.access_token,
+                i.name as institution_name
+            FROM access_tokens at
+            JOIN institutions i ON at.institution_id = i.id
+        """)
+        tokens = cur.fetchall()
+        
+        if not tokens:
             return jsonify({'error': 'No access tokens found'}), 500
-
+            
         handler = FinancialDataHandler()
         
         all_results = []
-        for institution_data in tokens_data.values():
-            access_token = institution_data['access_token']
+        for token in tokens:
             try:
-                result = handler.fetch_and_process_financial_data(access_token)
-                result['institution_name'] = institution_data['institution_name']
+                result = handler.fetch_and_process_financial_data(token['access_token'])
+                result['institution_name'] = token['institution_name']
                 all_results.append(result)
-                app.logger.info(f"Successfully processed data for {institution_data['institution_name']}")
+                app.logger.info(f"Successfully processed data for {token['institution_name']}")
             except Exception as e:
-                app.logger.error(f"Error processing institution {institution_data['institution_name']}: {str(e)}")
-                return jsonify({'error': f"Error processing institution {institution_data['institution_name']}: {str(e)}"}), 500
+                app.logger.error(f"Error processing institution {token['institution_name']}: {str(e)}")
+                return jsonify({'error': f"Error processing institution {token['institution_name']}: {str(e)}"}), 500
 
         return jsonify({'results': all_results}), 200
         
     except Exception as e:
         app.logger.error(f"Error fetching financial data: {str(e)}")
         return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
 
 @app.route('/remove_institution', methods=['POST'])
 def remove_institution():
@@ -156,59 +150,51 @@ def remove_institution():
         if not institution_id:
             return jsonify({'error': 'Institution ID is required'}), 400
 
-        # Get access tokens
-        tokens_data = {}
-        try:
-            with open('access_tokens.json', 'r') as f:
-                tokens_data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            pass
-
-        # Get the access_token if it exists
-        institution_data = tokens_data.get(institution_id, {})
-        access_token = institution_data.get('access_token')
-        
-        # Remove from Plaid if we have an access token
-        if access_token:
-            try:
-                client = create_plaid_client()
-                plaid_request = ItemRemoveRequest(access_token=access_token)
-                client.item_remove(plaid_request)
-            except Exception as e:
-                print(f"Error removing item from Plaid: {e}")
-
-        # Remove from database in correct order
         conn = get_db_connection()
         cur = conn.cursor()
+        
         try:
             cur.execute("BEGIN")
             
-            # First delete the cursor
+            # Get access token before deleting
+            cur.execute("""
+                SELECT access_token 
+                FROM access_tokens 
+                WHERE institution_id = %s
+            """, (institution_id,))
+            result = cur.fetchone()
+            
+            if result:
+                access_token = result[0]
+                try:
+                    client = create_plaid_client()
+                    plaid_request = ItemRemoveRequest(access_token=access_token)
+                    client.item_remove(plaid_request)
+                except Exception as e:
+                    print(f"Error removing item from Plaid: {e}")
+
+            # Delete data in correct order
             cur.execute("DELETE FROM institution_cursors WHERE institution_id = %s", (institution_id,))
+            cur.execute("DELETE FROM access_tokens WHERE institution_id = %s", (institution_id,))
             
-            # Get all account IDs for this institution
-            cur.execute("SELECT account_id FROM accounts WHERE institution_id = %s", (institution_id,))
-            account_ids = [row[0] for row in cur.fetchall()]
+            # Delete account-related data
+            cur.execute("""
+                WITH account_ids AS (
+                    SELECT account_id FROM accounts WHERE institution_id = %s
+                )
+                DELETE FROM transactions WHERE account_id IN (SELECT account_id FROM account_ids)
+            """, (institution_id,))
             
-            # Delete from all related tables in correct order
-            for account_id in account_ids:
-                cur.execute("DELETE FROM transactions WHERE account_id = %s", (account_id,))
-                cur.execute("DELETE FROM depository_accounts WHERE account_id = %s", (account_id,))
-                cur.execute("DELETE FROM credit_accounts WHERE account_id = %s", (account_id,))
-                cur.execute("DELETE FROM loan_accounts WHERE account_id = %s", (account_id,))
-                cur.execute("DELETE FROM investment_accounts WHERE account_id = %s", (account_id,))
+            for table in ['depository_accounts', 'credit_accounts', 'loan_accounts', 'investment_accounts']:
+                cur.execute(f"""
+                    DELETE FROM {table} 
+                    WHERE account_id IN (
+                        SELECT account_id FROM accounts WHERE institution_id = %s
+                    )
+                """, (institution_id,))
             
-            # Now safe to delete from accounts
             cur.execute("DELETE FROM accounts WHERE institution_id = %s", (institution_id,))
-            
-            # Finally delete the institution
             cur.execute("DELETE FROM institutions WHERE id = %s", (institution_id,))
-            
-            # Remove from access_tokens.json
-            if institution_id in tokens_data:
-                del tokens_data[institution_id]
-                with open('access_tokens.json', 'w') as f:
-                    json.dump(tokens_data, f)
             
             cur.execute("COMMIT")
             return jsonify({'success': True}), 200

@@ -10,6 +10,7 @@ select * from institutions;
 select * from category_mappings;
 select * from group_mappings;
 select * from institution_cursors;
+select * from access_tokens;
 
 
 -- Table Creation
@@ -127,6 +128,19 @@ CREATE TABLE institution_cursors (
     first_sync_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_sync_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     sync_status VARCHAR(50) DEFAULT 'pending',
+    CONSTRAINT fk_institution
+        FOREIGN KEY(institution_id) 
+        REFERENCES institutions(id)
+        ON DELETE CASCADE
+);
+
+-- access tokens
+CREATE TABLE access_tokens (
+    institution_id VARCHAR(255) PRIMARY KEY REFERENCES institutions(id) ON DELETE CASCADE,
+    access_token TEXT NOT NULL,
+    item_id VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_institution
         FOREIGN KEY(institution_id) 
         REFERENCES institutions(id)
