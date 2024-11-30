@@ -26,7 +26,7 @@ from plaid.model.sandbox_item_fire_webhook_request import SandboxItemFireWebhook
 from plaid.model.webhook_type import WebhookType
 from financial_data.utils.db_connection import get_db_connection
 
-CURSOR_FILE = 'cursor.json'
+
 
 def save_cursor(cursor, institution_id):
     conn = get_db_connection()

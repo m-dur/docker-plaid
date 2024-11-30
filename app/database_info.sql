@@ -9,6 +9,7 @@ select * from loan_accounts;
 select * from institutions;
 select * from category_mappings;
 select * from group_mappings;
+select * from institution_cursors;
 
 
 -- Table Creation
