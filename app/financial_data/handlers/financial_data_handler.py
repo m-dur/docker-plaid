@@ -7,7 +7,7 @@ from ..db_operations.reference.institutions_db import save_institutions_to_db
 from plaid_service import (
     get_accounts, get_bank_balances, get_item, 
     get_institution_info, get_transactions_sync, get_saved_cursor, get_liabilities,
-    save_cursor, delete_cursor, create_plaid_client
+    save_cursor, create_plaid_client, delete_cursor
 )
 from ..processors.core.transactions_processor import process_transactions
 from ..db_operations.core.transactions_db import save_transactions_to_db
@@ -26,6 +26,8 @@ class FinancialDataHandler:
         pass
 
     def fetch_and_process_financial_data(self, access_token, conn=None, cur=None, item_info=None):
+        print("\n=== Financial Data Processing Debug ===")
+        
         should_close = False
         if conn is None or cur is None:
             conn = get_db_connection()
@@ -46,6 +48,30 @@ class FinancialDataHandler:
         }
         
         try:
+            # Check if transactions table is empty for this institution
+            if item_info:
+                institution_id = item_info.get('institution_id')
+            else:
+                item_info = get_item(access_token)
+                institution_id = item_info['institution_id']
+            
+            cur.execute("""
+                SELECT COUNT(*) 
+                FROM transactions t
+                JOIN accounts a ON t.account_id = a.account_id
+                WHERE a.institution_id = %s
+            """, (institution_id,))
+            transaction_count = cur.fetchone()[0]
+            
+            # If no transactions exist for this institution, delete the cursor to force full sync
+            if transaction_count == 0:
+                print(f"No transactions found for institution {institution_id} - forcing full sync")
+                delete_cursor(institution_id)
+                current_cursor = None
+            else:
+                current_cursor = get_saved_cursor(institution_id)
+                print(f"Current cursor before sync: {current_cursor}")
+            
             # 2. Get and save institution info
             if not item_info:
                 item_info = get_item(access_token)
@@ -69,7 +95,16 @@ class FinancialDataHandler:
                 records.append(tuple(record_list))
             
             execute_values(cur, """
-                INSERT INTO institutions (id, name, type, status, url, oauth, refresh_interval, billed_products)
+                INSERT INTO institutions (
+                    id, 
+                    name, 
+                    type,
+                    status,
+                    url,
+                    oauth,
+                    refresh_interval,
+                    billed_products
+                )
                 VALUES %s
                 ON CONFLICT (id) DO UPDATE SET 
                     name = EXCLUDED.name,
@@ -78,7 +113,8 @@ class FinancialDataHandler:
                     url = EXCLUDED.url,
                     oauth = EXCLUDED.oauth,
                     refresh_interval = EXCLUDED.refresh_interval,
-                    billed_products = EXCLUDED.billed_products
+                    billed_products = EXCLUDED.billed_products,
+                    last_refresh = CURRENT_TIMESTAMP
             """, records)
             
             # 3. Process accounts
@@ -94,7 +130,21 @@ class FinancialDataHandler:
             save_accounts_to_db(accounts_dfs, conn, cur)
             
             # 4. Process transactions
-            transactions_response = get_transactions_sync(access_token)
+            # Only get current cursor if this isn't a new account
+            if item_info and item_info.get('is_new_account'):
+                print("New account detected - starting fresh transaction sync")
+                transactions_response = get_transactions_sync(access_token, None, institution_id)
+            else:
+                # Get current cursor before sync for existing accounts
+                current_cursor = get_saved_cursor(institution_id)
+                print(f"Current cursor before sync: {current_cursor}")
+                transactions_response = get_transactions_sync(access_token, current_cursor, institution_id)
+            
+            print(f"\nTransaction processing results:")
+            print(f"- Added: {len(transactions_response.added)}")
+            print(f"- Modified: {len(transactions_response.modified)}")
+            print(f"- Removed: {len(transactions_response.removed)}")
+            
             if transactions_response.added or transactions_response.modified:
                 # Use the direct process_transactions method instead
                 if self.process_transactions(transactions_response, access_token):
@@ -106,7 +156,7 @@ class FinancialDataHandler:
             
             # Save the new cursor
             if transactions_response.next_cursor:
-                save_cursor(transactions_response.next_cursor)
+                save_cursor(transactions_response.next_cursor, institution_id)
             
             # Commit all changes
             conn.commit()

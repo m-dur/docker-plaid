@@ -312,7 +312,7 @@
                             <span class="value" id="last-refresh-{{ institution.id }}">Loading...</span>
                         </div>
                         <div class="metadata-item">
-                            <span class="label">Last Credit Pull</span>
+                            <span class="label">New Transactions</span>
                             <span class="value" id="last-credit-{{ institution.id }}">Loading...</span>
                         </div>
                         <div class="metadata-item">
@@ -394,9 +394,8 @@
             
             if (response.ok) {
                 $('.loading-text').text('Fetching initial data...');
-                // Wait a moment to show the fetching message
                 await new Promise(resolve => setTimeout(resolve, 1000));
-                window.location.reload();
+                window.location.reload();    // Will trigger updateDatabaseStatistics via DOMContentLoaded
             } else {
                 throw new Error('Failed to exchange token');
             }
@@ -445,6 +444,9 @@
                     updateInstitutionMetadata(institutionId);
                 });
                 
+                // Update database statistics immediately
+                updateDatabaseStatistics();
+                
                 // Hide loading overlay after a short delay
                 setTimeout(() => {
                     $('.loading-overlay').hide();
@@ -490,7 +492,9 @@
                     contentType: 'application/json',
                     data: JSON.stringify({ institution_id: institutionId }),
                     success: function() {
-                        window.location.reload();
+                        setTimeout(() => {
+                            window.location.reload();  // Will trigger updateDatabaseStatistics via DOMContentLoaded
+                        }, 500);
                     },
                     error: function(xhr) {
                         $('.loading-overlay').hide();
@@ -511,66 +515,37 @@
   </script>
   <script>
   function updateInstitutionMetadata(institutionId) {
-      fetch(`/api/institution/${institutionId}/metadata`)
+      fetch(`/api/institution_metadata/${institutionId}`)
           .then(response => response.json())
           .then(data => {
-              if (!data || !data.metadata) {
-                  throw new Error('Invalid metadata response');
-              }
-              
-              const formatDate = (dateStr) => {
-                  if (!dateStr) return 'Never';
-                  try {
-                      const date = new Date(dateStr);
-                      if (isNaN(date.getTime())) return 'Never';
-                      
-                      return date.toLocaleString(undefined, {
-                          year: 'numeric',
-                          month: '2-digit',
-                          day: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: true
-                      });
-                  } catch (error) {
-                      console.error('Error formatting date:', error);
-                      return 'Never';
-                  }
-              };
-
-              const formatNumber = (num) => {
-                  return num?.toLocaleString() || '0';
-              };
-
-              // Update all metadata fields
+              // Update last transaction
               document.getElementById(`last-transaction-${institutionId}`).textContent = 
-                  formatDate(data.metadata.lastTransactionDate);
+                  data.last_transaction ? new Date(data.last_transaction).toLocaleString() : 'Never';
+              
+              // Update last refresh
               document.getElementById(`last-refresh-${institutionId}`).textContent = 
-                  formatDate(data.metadata.lastAccountRefresh);
+                  data.last_refresh ? new Date(data.last_refresh).toLocaleString() : 'Never';
+              
+              // Update new transactions count
               document.getElementById(`last-credit-${institutionId}`).textContent = 
-                  formatDate(data.metadata.lastCreditPull);
+                  `${data.new_transactions} new transactions`;
+              
+              // Update connected on
               document.getElementById(`connected-on-${institutionId}`).textContent = 
-                  formatDate(data.metadata.connectedOn);
+                  data.connected_on ? new Date(data.connected_on).toLocaleString() : 'Never';
+                
+              // Update account data
               document.getElementById(`account-count-${institutionId}`).textContent = 
-                  formatNumber(data.metadata.connectedAccounts);
+                  data.account_count;
               document.getElementById(`transaction-count-${institutionId}`).textContent = 
-                  formatNumber(data.metadata.totalTransactions);
+                  data.transaction_count;
               document.getElementById(`uncategorized-count-${institutionId}`).textContent = 
-                  formatNumber(data.metadata.uncategorizedTransactions);
+                  data.uncategorized_count;
           })
           .catch(error => {
               console.error('Error:', error);
-              // Set error state for all fields
-              const fields = [
-                  'last-transaction', 
-                  'last-refresh', 
-                  'last-credit', 
-                  'connected-on', 
-                  'account-count', 
-                  'transaction-count',
-                  'uncategorized-count'
-              ];
-              fields.forEach(field => {
+              ['last-transaction', 'last-refresh', 'last-credit', 'connected-on',
+               'account-count', 'transaction-count', 'uncategorized-count'].forEach(field => {
                   document.getElementById(`${field}-${institutionId}`).textContent = 'Error';
               });
           });
@@ -586,57 +561,44 @@
   });
   </script>
   <script>
-  function updateDatabaseStats() {
-      fetch('/api/database_status')
-          .then(response => {
-              if (!response.ok) {
-                  throw new Error('Network response was not ok');
-              }
-              return response.json();
-          })
-          .then(data => {
-              const tableBody = document.querySelector('#database-stats-table tbody');
-              tableBody.innerHTML = '';
+  // Function to update database statistics
+  function updateDatabaseStatistics() {
+      console.log("Fetching database statistics...");
+      $.ajax({
+          url: '/api/database_statistics',
+          method: 'GET',
+          success: function(statsData) {
+              console.log("Received statistics:", statsData);
+              const tbody = document.querySelector('#database-stats-table tbody');
+              tbody.innerHTML = ''; // Clear existing rows
               
-              // Sort tables by row count in descending order
-              const sortedTables = Object.entries(data)
-                  .sort(([,a], [,b]) => b.count - a.count);
-              
-              if (sortedTables.length === 0) {
-                  tableBody.innerHTML = '<tr><td colspan="2">No tables found</td></tr>';
+              if (statsData.error) {
+                  console.error("Error in statistics:", statsData.error);
+                  tbody.innerHTML = `<tr><td colspan="2">Error: ${statsData.error}</td></tr>`;
                   return;
               }
               
-              sortedTables.forEach(([tableName, tableData]) => {
-                  const row = document.createElement('tr');
-                  row.innerHTML = `
-                      <td>${tableName}</td>
-                      <td>${tableData.count.toLocaleString()}</td>
-                  `;
-                  tableBody.appendChild(row);
-              });
-          })
-          .catch(error => {
-              console.error('Error fetching database stats:', error);
-              document.querySelector('#database-stats-table tbody').innerHTML = 
-                  '<tr><td colspan="2">Error loading stats</td></tr>';
-          });
+              Object.entries(statsData)
+                  .sort(([,a], [,b]) => b - a)
+                  .forEach(([table, count]) => {
+                      const row = document.createElement('tr');
+                      row.innerHTML = `
+                          <td>${table.replace(/_/g, ' ')}</td>
+                          <td>${count}</td>
+                      `;
+                      tbody.appendChild(row);
+                  });
+          },
+          error: function(xhr, status, error) {
+              console.error("Ajax error:", {xhr, status, error});
+              const tbody = document.querySelector('#database-stats-table tbody');
+              tbody.innerHTML = '<tr><td colspan="2">Error loading statistics</td></tr>';
+          }
+      });
   }
 
-  // Update stats when page loads
-  document.addEventListener('DOMContentLoaded', updateDatabaseStats);
-
-  // Update stats after fetching new data
-  document.querySelector('#fetch-data-button')?.addEventListener('click', () => {
-      setTimeout(updateDatabaseStats, 1000);
-  });
-
-  // Update stats after removing an institution
-  document.querySelectorAll('.remove-institution').forEach(button => {
-      button.addEventListener('click', () => {
-          setTimeout(updateDatabaseStats, 1000);
-      });
-  });
+  // Instead, just do an initial load when the page loads
+  document.addEventListener('DOMContentLoaded', updateDatabaseStatistics);
   </script>
 </body>
 </html>

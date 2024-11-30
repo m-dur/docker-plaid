@@ -2,7 +2,7 @@ from psycopg2.extras import DictCursor
 from decimal import Decimal
 from datetime import datetime, date
 import json
-from financial_data.config.db_config import get_db_connection
+from financial_data.utils.db_connection import get_db_connection
 from flask import jsonify
 import psycopg2
 

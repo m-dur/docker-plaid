@@ -24,41 +24,77 @@ from plaid.model.item_get_request import ItemGetRequest
 from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
 from plaid.model.sandbox_item_fire_webhook_request import SandboxItemFireWebhookRequest
 from plaid.model.webhook_type import WebhookType
+from financial_data.utils.db_connection import get_db_connection
 
 CURSOR_FILE = 'cursor.json'
 
-def save_cursor(cursor):
+def save_cursor(cursor, institution_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
     try:
-        with open(CURSOR_FILE, 'w') as f:
-            json.dump({'cursor': cursor}, f)
-        print(f"Cursor saved successfully: {cursor}")
-    except IOError as e:
-        print(f"Error saving cursor: {e}")
+        # Check if this is first sync
+        cur.execute("""
+            INSERT INTO institution_cursors 
+                (institution_id, cursor, last_sync_at, sync_status, first_sync_at)
+            VALUES (%s, %s, CURRENT_TIMESTAMP, 'completed', CURRENT_TIMESTAMP)
+            ON CONFLICT (institution_id) 
+            DO UPDATE SET 
+                cursor = EXCLUDED.cursor,
+                last_sync_at = CURRENT_TIMESTAMP,
+                sync_status = 'completed'
+            RETURNING (xmax = 0) as is_insert
+        """, (institution_id, cursor))
+        is_new = cur.fetchone()[0]
+        conn.commit()
+        
+        if is_new:
+            print(f"✓ Initial cursor created for institution {institution_id}")
+        else:
+            print(f"✓ Cursor updated for institution {institution_id}")
+    except Exception as e:
+        print(f"❌ Error saving cursor: {e}")
+        conn.rollback()
+    finally:
+        cur.close()
+        conn.close()
 
-def get_saved_cursor():
-    if not os.path.exists(CURSOR_FILE):
-        print("Cursor file does not exist. Returning None.")
-        return None
+def get_saved_cursor(institution_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
     try:
-        with open(CURSOR_FILE, 'r') as f:
-            content = f.read().strip()
-            if not content:
-                print("Cursor file is empty. Returning None.")
-                return None
-            data = json.loads(content)
-            cursor = data.get('cursor')
-            print(f"Retrieved cursor: {cursor}")
-            return cursor
-    except (IOError, json.JSONDecodeError) as e:
-        print(f"Error reading cursor: {e}")
+        cur.execute("""
+            SELECT cursor, last_sync_at 
+            FROM institution_cursors 
+            WHERE institution_id = %s
+        """, (institution_id,))
+        result = cur.fetchone()
+        return result[0] if result else None
+    except Exception as e:
+        print(f"❌ Error retrieving cursor: {e}")
         return None
+    finally:
+        cur.close()
+        conn.close()
 
-def delete_cursor():
-    if os.path.exists(CURSOR_FILE):
-        os.remove(CURSOR_FILE)
-        print("Cursor file deleted.")
-    else:
-        print("Cursor file does not exist.")
+def delete_cursor(institution_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            UPDATE institution_cursors 
+            SET cursor = NULL, 
+                sync_status = 'pending',
+                last_sync_at = CURRENT_TIMESTAMP 
+            WHERE institution_id = %s
+        """, (institution_id,))
+        conn.commit()
+        print(f"✓ Cursor reset for institution {institution_id}")
+    except Exception as e:
+        print(f"❌ Error deleting cursor: {e}")
+        conn.rollback()
+    finally:
+        cur.close()
+        conn.close()
 
 def save_access_token(access_token, item_id, institution_id, institution_name):
     try:
@@ -127,9 +163,12 @@ def create_plaid_client():
     api_client = ApiClient(configuration)
     return plaid_api.PlaidApi(api_client)
 
-def get_transactions_sync(access_token, cursor=None):
+def get_transactions_sync(access_token, cursor=None, institution_id=None):
     """Fetch transactions using the sync endpoint"""
     client = create_plaid_client()
+    
+    print("\n=== Transaction Sync Debug ===")
+    print(f"Starting sync with cursor: {cursor}")
     
     request_dict = {
         "access_token": access_token
@@ -137,34 +176,28 @@ def get_transactions_sync(access_token, cursor=None):
     
     if cursor is not None and cursor.strip():
         request_dict["cursor"] = cursor.strip()
+        print(f"Using existing cursor: {cursor}")
+    else:
+        print("No cursor provided - will fetch all transactions")
     
     request = TransactionsSyncRequest(**request_dict)
     
     try:
         response = client.transactions_sync(request)
-        # Save the new cursor after successful sync
-        if response.next_cursor:
-            save_cursor(response.next_cursor)
+        print(f"Sync Response:")
+        print(f"- Added transactions: {len(response.added)}")
+        print(f"- Modified transactions: {len(response.modified)}")
+        print(f"- Removed transactions: {len(response.removed)}")
+        print(f"- New cursor: {response.next_cursor}")
+        
+        if response.next_cursor and institution_id:
+            save_cursor(response.next_cursor, institution_id)
+            print("✓ New cursor saved successfully")
         return response
-    except plaid.ApiException as e:
-        error_response = json.loads(e.body)
-        print(f"Error syncing transactions: {error_response.get('error_code')} - {error_response.get('error_message')}")
-        raise
     except Exception as e:
-        print(f"Unexpected error syncing transactions: {e}")
+        print(f"❌ Error in transaction sync: {str(e)}")
         raise
 
-def save_cursor(cursor):
-    with open('cursor.json', 'w') as f:
-        json.dump({'cursor': cursor}, f)
-
-def get_saved_cursor():
-    try:
-        with open('cursor.json', 'r') as f:
-            data = json.load(f)
-            return data.get('cursor')
-    except FileNotFoundError:
-        return None
 
 def create_and_store_link_token():
     """Create and store a link token in the session"""
@@ -203,23 +236,7 @@ def save_link_token(token):
     with open('link_token.json', 'w') as f:
         json.dump({'link_token': token}, f)
 
-def get_stored_link_token():
-    """Get link token from session or file"""
-    token = session.get('link_token')
-    if not token:
-        try:
-            with open('link_token.json', 'r') as f:
-                data = json.load(f)
-                token = data.get('link_token')
-        except (FileNotFoundError, json.JSONDecodeError):
-            token = None
-    return token
 
-def _get_accounts_internal(access_token):
-    client = create_plaid_client()
-    request = AccountsGetRequest(access_token=access_token)
-    response = client.accounts_get(request)
-    return response['accounts']
 
 def get_accounts(access_token):
     """Get accounts from Plaid"""
@@ -231,12 +248,6 @@ def get_accounts(access_token):
     except Exception as e:
         print(f"Error getting accounts: {e}")
         return []
-
-def get_account_balances(access_token):
-    client = create_plaid_client()
-    request = AccountsBalanceGetRequest(access_token=access_token)
-    response = client.accounts_balance_get(request)
-    return response['accounts']
 
 def get_bank_balances(access_token):
     """Get bank balances from Plaid"""
@@ -321,24 +332,24 @@ def get_investments(access_token):
 def get_institution_info(access_token):
     """Get institution info from Plaid"""
     try:
-        print("\nDebug - get_institution_info started")
+        #print("\nDebug - get_institution_info started")
         client = create_plaid_client()
         
         # Get item info first
-        print("Debug - Getting item info")
+        #print("Debug - Getting item info")
         item_request = ItemGetRequest(access_token=access_token)
         item_response = client.item_get(item_request)
         institution_id = item_response.item.institution_id
-        print(f"Debug - Got institution_id: {institution_id}")
+        #print(f"Debug - Got institution_id: {institution_id}")
         
         # Get institution details
-        print("Debug - Getting institution details")
+        #print("Debug - Getting institution details")
         request = InstitutionsGetByIdRequest(
             institution_id=institution_id,
             country_codes=[CountryCode('US')]
         )
         response = client.institutions_get_by_id(request)
-        print(f"Debug - Got institution response: {response}")
+        #print(f"Debug - Got institution response: {response}")
         
         if not response or not response.institution:
             raise Exception("No institution data received from Plaid")

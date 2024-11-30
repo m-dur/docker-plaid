@@ -1,0 +1,128 @@
+@startuml "Financial Data Fetcher Architecture"
+
+' Package definitions
+package "Configuration" {
+  [config.py] as Config
+  note right of Config
+    Manages environment variables and configuration:
+    - Plaid API credentials
+    - Environment settings
+    - Webhook secrets
+    - App URLs
+  end note
+}
+
+package "Core Application" {
+  [app.py] as App
+  note right of App
+    Flask application that:
+    - Handles all routes
+    - Manages Plaid link flow
+    - Processes webhooks
+    - Serves API endpoints
+    - Renders templates
+  end note
+}
+
+package "Database Schema" {
+  [db_schema.py] as DBSchema
+  note right of DBSchema
+    Generates visual representation of:
+    - Database tables
+    - Relationships
+    - Primary/Foreign keys
+    - Column types
+  end note
+}
+
+package "Plaid Integration" {
+  [plaid_service.py] as PlaidService
+  note right of PlaidService
+    Handles all Plaid API interactions:
+    - Link token creation
+    - Account syncing
+    - Transaction fetching
+    - Balance updates
+    - Webhook management
+  end note
+}
+
+package "Templates" {
+  [index.html] as IndexTemplate
+  [data.html] as DataTemplate
+  [expenses.html] as ExpensesTemplate
+  [income.html] as IncomeTemplate
+  [net_income.html] as NetIncomeTemplate
+  note right of IndexTemplate
+    Frontend templates for:
+    - Main dashboard
+    - Data visualization
+    - Financial analysis
+    - Account management
+  end note
+}
+
+package "Financial Data Processing" {
+  folder "handlers" {
+    [financial_data_handler.py] as DataHandler
+    note right of DataHandler
+      Orchestrates data processing:
+      - Fetches financial data
+      - Manages transactions
+      - Handles errors
+      - Coordinates DB operations
+    end note
+  }
+  
+  folder "processors" {
+    [accounts_processor.py] as AccountsProcessor
+    [transactions_processor.py] as TransactionsProcessor
+    note right of AccountsProcessor
+      Process raw data into structured format:
+      - Account information
+      - Transaction details
+      - Categories
+      - Balances
+    end note
+  }
+  
+  folder "db_operations" {
+    [accounts_db.py] as AccountsDB
+    [transactions_db.py] as TransactionsDB
+    note right of AccountsDB
+      Handle database operations:
+      - Data insertion
+      - Updates
+      - Queries
+      - Error handling
+    end note
+  }
+}
+
+' Relationships
+Config --> App : Provides configuration
+Config --> PlaidService : Configures API
+
+App --> PlaidService : Uses
+App --> DBSchema : Generates schema
+App --> Templates : Renders
+
+PlaidService --> DataHandler : Provides data
+
+DataHandler --> AccountsProcessor : Processes accounts
+DataHandler --> TransactionsProcessor : Processes transactions
+
+AccountsProcessor --> AccountsDB : Saves data
+TransactionsProcessor --> TransactionsDB : Saves data
+
+legend right
+  Process Flow:
+  1. User initiates Plaid link
+  2. App coordinates with Plaid service
+  3. Financial data is fetched
+  4. Data is processed and structured
+  5. Data is saved to database
+  6. UI is updated via templates
+endlegend
+
+@enduml

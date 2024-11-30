@@ -1,5 +1,5 @@
 from psycopg2.extras import execute_values
-from financial_data.config.db_config import get_db_connection
+from financial_data.utils.db_connection import get_db_connection
 
 def save_institutions_to_db(institutions_df):
     """Save institutions data to the institutions table"""

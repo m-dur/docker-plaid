@@ -12,6 +12,7 @@ select * from group_mappings;
 
 
 -- Table Creation
+drop table institutions;
 
 -- institutions
 CREATE TABLE institutions (
@@ -23,9 +24,9 @@ CREATE TABLE institutions (
     type TEXT,
     status VARCHAR(50),
     billed_products TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_refresh TIMESTAMP
 );
-
 
 -- Accounts
 
@@ -118,3 +119,15 @@ CREATE TABLE transactions (
     pull_date DATE DEFAULT CURRENT_DATE
 );
 
+-- institution cursor
+CREATE TABLE institution_cursors (
+    institution_id VARCHAR(255) PRIMARY KEY REFERENCES institutions(id),
+    cursor TEXT,
+    first_sync_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_sync_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    sync_status VARCHAR(50) DEFAULT 'pending',
+    CONSTRAINT fk_institution
+        FOREIGN KEY(institution_id) 
+        REFERENCES institutions(id)
+        ON DELETE CASCADE
+);

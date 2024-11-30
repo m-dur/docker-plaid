@@ -1,9 +1,9 @@
 import json
 import plaid
 from flask import Flask, render_template, request, jsonify, session, send_file
-from plaid_service import create_and_store_link_token, get_access_token, save_access_token, get_saved_access_tokens, delete_cursor, get_institution_info, get_access_token_by_item_id, fire_sandbox_webhook, get_item, create_plaid_client
+from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
+from plaid_service import create_and_store_link_token, get_access_token, save_access_token, get_saved_access_tokens, get_institution_info, get_access_token_by_item_id, fire_sandbox_webhook, get_item, create_plaid_client
 from financial_data.handlers.financial_data_handler import FinancialDataHandler
-from financial_data.config.excel_config import EXCEL_FILE
 from db_schema import generate_db_schema
 from financial_data.db_operations.query_operations import execute_query, CustomJSONEncoder
 import psycopg2
@@ -15,12 +15,10 @@ import hmac
 import hashlib
 from config import Config
 from financial_data.utils.db_connection import get_db_connection
-from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
-from plaid.model.item_remove_request import ItemRemoveRequest
-from psycopg2.extras import RealDictCursor
-from sqlalchemy import text
-from dateutil.relativedelta import relativedelta
 import calendar
+from dateutil.relativedelta import relativedelta
+from psycopg2.extras import RealDictCursor
+from plaid.model.item_remove_request import ItemRemoveRequest
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'  # Change this to a secure random key
@@ -75,9 +73,14 @@ def exchange_public_token():
         # Get institution info before saving anything
         institution_info = get_institution_info(access_token)
         
-        # Process financial data with transaction support
+        # For new accounts, we should start with a fresh sync
         handler = FinancialDataHandler()
-        success = handler.fetch_and_process_financial_data(access_token, conn=conn, cur=cur)
+        # Pass item_info with is_new_account flag instead
+        item_info = {
+            'institution_id': institution_id,
+            'is_new_account': True
+        }
+        success = handler.fetch_and_process_financial_data(access_token, conn=conn, cur=cur, item_info=item_info)
         
         if success:
             # Only save access token if everything else succeeded
@@ -179,6 +182,9 @@ def remove_institution():
         cur = conn.cursor()
         try:
             cur.execute("BEGIN")
+            
+            # First delete the cursor
+            cur.execute("DELETE FROM institution_cursors WHERE institution_id = %s", (institution_id,))
             
             # Get all account IDs for this institution
             cur.execute("SELECT account_id FROM accounts WHERE institution_id = %s", (institution_id,))
@@ -390,62 +396,72 @@ def test_webhook():
             'error': str(e)
         }), 500
 
-@app.route('/api/institution/<institution_id>/metadata')
+@app.route('/api/institution_metadata/<institution_id>')
 def get_institution_metadata(institution_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
     try:
-        conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        
-        # Get institution info and basic counts
+        # Get institution details
         cur.execute("""
-            WITH stats AS (
-                SELECT 
-                    i.*, 
-                    COUNT(DISTINCT a.account_id) as connected_accounts,
-                    COUNT(DISTINCT t.transaction_id) as total_transactions,
-                    COUNT(DISTINCT CASE 
-                        WHEN t.category IS NULL OR t.group_name IS NULL 
-                        THEN t.transaction_id 
-                    END) as uncategorized_transactions,
-                    MAX(t.date) as last_transaction_date,
-                    MIN(i.created_at) as connected_on
-                FROM institutions i
-                LEFT JOIN accounts a ON i.id = a.institution_id
-                LEFT JOIN transactions t ON a.account_id = t.account_id
-                WHERE i.id = %s
-                GROUP BY i.id
-            )
-            SELECT * FROM stats
+            SELECT 
+                last_refresh,
+                created_at as connected_on
+            FROM institutions 
+            WHERE id = %s
         """, (institution_id,))
+        inst_data = cur.fetchone()
         
-        result = cur.fetchone()
+        # Get last transaction date
+        cur.execute("""
+            SELECT MAX(date) 
+            FROM transactions t
+            JOIN accounts a ON t.account_id = a.account_id
+            WHERE a.institution_id = %s
+        """, (institution_id,))
+        last_transaction = cur.fetchone()[0]
         
-        if not result:
-            return jsonify({'error': 'Institution not found'}), 404
-            
-        metadata = {
-            'id': result['id'],
-            'name': result['name'],
-            'status': result['status'],
-            'connectedAccounts': result['connected_accounts'] or 0,
-            'totalTransactions': result['total_transactions'] or 0,
-            'uncategorizedTransactions': result['uncategorized_transactions'] or 0,
-            'lastTransactionDate': result['last_transaction_date'].isoformat() if result['last_transaction_date'] else None,
-            'connectedOn': result['connected_on'].isoformat() if result['connected_on'] else None,
-            'lastAccountRefresh': None,
-            'lastCreditPull': None
-        }
+        # Get account counts
+        cur.execute("""
+            SELECT 
+                COUNT(DISTINCT a.account_id) as account_count,
+                COUNT(DISTINCT t.transaction_id) as transaction_count,
+                COUNT(DISTINCT CASE WHEN t.category IS NULL THEN t.transaction_id END) as uncategorized_count
+            FROM accounts a
+            LEFT JOIN transactions t ON a.account_id = t.account_id
+            WHERE a.institution_id = %s
+        """, (institution_id,))
+        counts = cur.fetchone()
         
-        return jsonify({'metadata': metadata})
+        # Get new transactions (since last refresh)
+        cur.execute("""
+            SELECT COUNT(*) 
+            FROM transactions t
+            JOIN accounts a ON t.account_id = a.account_id
+            WHERE a.institution_id = %s
+            AND t.created_at > COALESCE(
+                (SELECT last_refresh FROM institutions WHERE id = %s),
+                '1970-01-01'::timestamp
+            )
+        """, (institution_id, institution_id))
+        new_transactions = cur.fetchone()[0]
+        
+        return jsonify({
+            'last_transaction': last_transaction.isoformat() if last_transaction else None,
+            'last_refresh': inst_data[0].isoformat() if inst_data and inst_data[0] else None,
+            'connected_on': inst_data[1].isoformat() if inst_data and inst_data[1] else None,
+            'new_transactions': new_transactions,
+            'account_count': counts[0],
+            'transaction_count': counts[1],
+            'uncategorized_count': counts[2] if counts[2] else 0
+        })
         
     except Exception as e:
-        print(f"Error getting institution metadata: {str(e)}")
+        print(f"Error in get_institution_metadata: {str(e)}")
         return jsonify({'error': str(e)}), 500
     finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()
+        cur.close()
+        conn.close()
 
 @app.route('/transactions')
 def transactions():
@@ -832,37 +848,30 @@ def expenses_daily():
         cur.close()
         conn.close()
 
-@app.route('/api/database_status')
-def database_status():
+@app.route('/api/database_statistics')
+def get_database_statistics():
+    print("\n=== Database Statistics Debug ===")
     conn = get_db_connection()
     cur = conn.cursor()
     
     try:
-        # Query to get row counts for all tables
-        query = """
-        SELECT 
-            table_name,
-            (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = c.table_name) as column_count,
-            (SELECT reltuples::bigint FROM pg_class WHERE relname = c.table_name) as row_count
-        FROM information_schema.tables c
-        WHERE table_schema = 'public'
-        AND table_type = 'BASE TABLE';
-        """
+        # Query to get all tables and their row counts from the public schema
+        cur.execute("""
+            SELECT 
+                relname as table_name,
+                n_live_tup as row_count
+            FROM pg_stat_user_tables
+            WHERE schemaname = 'public'
+            ORDER BY n_live_tup DESC;
+        """)
         
-        cur.execute(query)
         results = cur.fetchall()
-        
-        stats = {}
-        for table_name, column_count, row_count in results:
-            stats[table_name] = {
-                'count': row_count,
-                'columns': column_count
-            }
-            
+        stats = {table_name: row_count for table_name, row_count in results}
+                
         return jsonify(stats)
         
     except Exception as e:
-        print(f"Error getting database stats: {str(e)}")
+        print(f"Error getting database statistics: {str(e)}")
         return jsonify({'error': str(e)}), 500
     finally:
         cur.close()
