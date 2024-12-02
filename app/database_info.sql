@@ -123,27 +123,48 @@ CREATE TABLE transactions (
 
 -- institution cursor
 CREATE TABLE institution_cursors (
-    institution_id VARCHAR(255) PRIMARY KEY,
+    cursor_id SERIAL PRIMARY KEY,
+    institution_id VARCHAR(255) NOT NULL,
     cursor TEXT,
     first_sync_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_sync_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     sync_status VARCHAR(50) DEFAULT 'pending',
-    CONSTRAINT fk_institution
+    CONSTRAINT fk_institution_cursor
         FOREIGN KEY(institution_id) 
         REFERENCES institutions(id)
-        ON DELETE CASCADE
+        ON DELETE CASCADE,
+    CONSTRAINT uq_institution_cursor
+        UNIQUE(institution_id)
 );
 
--- access tokens
+-- Access tokens
 CREATE TABLE access_tokens (
-    institution_id VARCHAR(255) PRIMARY KEY,
+    token_id SERIAL PRIMARY KEY,
+    institution_id VARCHAR(255) NOT NULL,
     access_token TEXT NOT NULL,
     item_id VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_institution
+    CONSTRAINT fk_institution_token
         FOREIGN KEY(institution_id) 
         REFERENCES institutions(id)
-        ON DELETE CASCADE
+        ON DELETE CASCADE,
+    CONSTRAINT uq_institution_token
+        UNIQUE(institution_id)
 );
 
+-- API Calls
+CREATE TABLE api_calls (
+    id SERIAL PRIMARY KEY,
+    endpoint VARCHAR(255) NOT NULL,
+    method VARCHAR(10) NOT NULL,
+    is_plaid BOOLEAN NOT NULL,
+    called_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    caller_type VARCHAR(50),  -- 'user', 'system', 'webhook', etc.
+    caller_id VARCHAR(100),   -- user_id, system_process_id, etc.
+    response_time FLOAT,      -- in seconds
+    status_code INTEGER,
+    error TEXT,
+    request_payload JSONB,    -- store request parameters
+    response_payload JSONB    -- store response data (if needed)
+);

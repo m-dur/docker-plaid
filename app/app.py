@@ -19,17 +19,26 @@ import calendar
 from dateutil.relativedelta import relativedelta
 from psycopg2.extras import RealDictCursor
 from plaid.model.item_remove_request import ItemRemoveRequest
-from routes.analytics import analytics_bp  # Import the blueprint
+from routes.analytics import analytics_bp
+from routes.transactions import transactions_bp
+from utils.api_tracker import track_api_call
+import logging
 
 # Then create the Flask app
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'  # Change this to a secure random key
 app.json_encoder = CustomJSONEncoder
 
+# Add logging configuration
+logging.basicConfig(level=logging.DEBUG)
+app.logger.setLevel(logging.DEBUG)
+
 # Register blueprints after creating the app
 app.register_blueprint(analytics_bp)
+app.register_blueprint(transactions_bp, url_prefix='/transactions')
 
 @app.route('/')
+@track_api_call()
 def index():
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -57,6 +66,7 @@ def index():
         conn.close()
 
 @app.route('/exchange_public_token', methods=['POST'])
+@track_api_call(is_plaid=True)
 def exchange_public_token():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -106,6 +116,7 @@ def exchange_public_token():
         conn.close()
 
 @app.route('/fetch_financial_data', methods=['POST'])
+@track_api_call()
 def fetch_financial_data():
     try:
         conn = get_db_connection()
@@ -147,6 +158,7 @@ def fetch_financial_data():
         conn.close()
 
 @app.route('/remove_institution', methods=['POST'])
+@track_api_call(is_plaid=True)
 def remove_institution():
     try:
         data = request.get_json()
@@ -179,10 +191,6 @@ def remove_institution():
                     print(f"Error removing item from Plaid: {e}")
 
             # Delete data in correct order
-            cur.execute("DELETE FROM institution_cursors WHERE institution_id = %s", (institution_id,))
-            cur.execute("DELETE FROM access_tokens WHERE institution_id = %s", (institution_id,))
-            
-            # Delete account-related data
             cur.execute("""
                 WITH account_ids AS (
                     SELECT account_id FROM accounts WHERE institution_id = %s
@@ -190,6 +198,17 @@ def remove_institution():
                 DELETE FROM transactions WHERE account_id IN (SELECT account_id FROM account_ids)
             """, (institution_id,))
             
+            # Delete from plaid_api_calls first
+            cur.execute("""
+                DELETE FROM plaid_api_calls 
+                WHERE access_token_id IN (
+                    SELECT token_id 
+                    FROM access_tokens 
+                    WHERE institution_id = %s
+                )
+            """, (institution_id,))
+            
+            # Then delete from other tables
             for table in ['depository_accounts', 'credit_accounts', 'loan_accounts', 'investment_accounts']:
                 cur.execute(f"""
                     DELETE FROM {table} 
@@ -199,6 +218,8 @@ def remove_institution():
                 """, (institution_id,))
             
             cur.execute("DELETE FROM accounts WHERE institution_id = %s", (institution_id,))
+            cur.execute("DELETE FROM institution_cursors WHERE institution_id = %s", (institution_id,))
+            cur.execute("DELETE FROM access_tokens WHERE institution_id = %s", (institution_id,))
             cur.execute("DELETE FROM institutions WHERE id = %s", (institution_id,))
             
             cur.execute("COMMIT")
@@ -215,35 +236,11 @@ def remove_institution():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/data')
+@track_api_call()
 def data():
     schema_diagram = generate_db_schema()
     return render_template('data.html', schema_diagram=schema_diagram)
 
-@app.route('/api/transactions')
-def get_transactions():
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    
-    try:
-        cur.execute("""
-             SELECT 
-                t.date,  
-                t.category,
-                t.group_name,
-                t.name,
-                t.amount,
-                a.account_name
-            FROM transactions t
-            LEFT JOIN accounts a ON t.account_id = a.account_id
-            order by date desc
-        """)
-        transactions = cur.fetchall()
-        return jsonify(transactions)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    finally:
-        cur.close()
-        conn.close()
 
 @app.route('/api/run_query', methods=['POST'])
 def run_query():
@@ -261,6 +258,7 @@ def run_query():
         }), 500
 
 @app.route('/export_query')
+@track_api_call()
 def export_query():
     query = request.args.get('query')
     
@@ -295,6 +293,7 @@ def export_query():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/webhook', methods=['POST'])
+@track_api_call(is_plaid=True)
 def webhook_handler():
     print("----------------------------------------")
     print("Webhook received!")
@@ -371,6 +370,7 @@ def webhook_handler():
     return jsonify({'message': 'Webhook received but no action taken'}), 200
 
 @app.route('/test_webhook', methods=['POST'])
+@track_api_call(is_plaid=True)
 def test_webhook():
     try:
         print("Starting test_webhook...")
@@ -417,6 +417,7 @@ def test_webhook():
         }), 500
 
 @app.route('/api/institution_metadata/<institution_id>')
+@track_api_call()
 def get_institution_metadata(institution_id):
     conn = get_db_connection()
     cur = conn.cursor()
@@ -483,116 +484,8 @@ def get_institution_metadata(institution_id):
         cur.close()
         conn.close()
 
-@app.route('/transactions')
-def transactions():
-    return render_template('transactions.html')
-
-@app.route('/api/transactions/update_category', methods=['POST'])
-def update_transaction_category():
-    try:
-        transaction_id = request.json.get('transaction_id')
-        new_category = request.json.get('category')
-        update_all = request.json.get('update_all', False)
-        transaction_name = request.json.get('transaction_name')
-        
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        # First, update the category_mappings table
-        cur.execute("""
-            INSERT INTO category_mappings (transaction_name, category)
-            VALUES (%s, %s)
-            ON CONFLICT (transaction_name) 
-            DO UPDATE SET 
-                category = EXCLUDED.category,
-                last_updated = CURRENT_TIMESTAMP
-        """, (transaction_name, new_category))
-        
-        # Then update the transactions table
-        if update_all:
-            cur.execute("""
-                UPDATE transactions 
-                SET category = %s
-                WHERE name = %s
-                RETURNING transaction_id, category, name
-            """, (new_category, transaction_name))
-        else:
-            cur.execute("""
-                UPDATE transactions 
-                SET category = %s
-                WHERE transaction_id = %s
-                RETURNING transaction_id, category, name
-            """, (new_category, transaction_id))
-        
-        updated = cur.fetchall()
-        conn.commit()
-        
-        return jsonify({
-            'success': True, 
-            'updated_count': len(updated),
-            'transaction_id': transaction_id,
-            'category': new_category
-        })
-        
-    except Exception as e:
-        app.logger.error(f"Error updating category: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-    finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()
-
-@app.route('/api/transactions/update_group', methods=['POST'])
-def update_transaction_group():
-    try:
-        transaction_id = request.json.get('transaction_id')
-        new_group = request.json.get('group')
-        update_all = request.json.get('update_all', False)
-        transaction_name = request.json.get('transaction_name')
-        
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        # First, update the group_mappings table
-        cur.execute("""
-            INSERT INTO group_mappings (transaction_name, group_name)
-            VALUES (%s, %s)
-            ON CONFLICT (transaction_name) 
-            DO UPDATE SET 
-                group_name = EXCLUDED.group_name,
-                last_updated = CURRENT_TIMESTAMP
-        """, (transaction_name, new_group))
-        
-        # Then update the transactions table
-        if update_all:
-            cur.execute("""
-                UPDATE transactions 
-                SET group_name = %s
-                WHERE name = %s
-                RETURNING transaction_id, group_name, name
-            """, (new_group, transaction_name))
-        else:
-            cur.execute("""
-                UPDATE transactions 
-                SET group_name = %s
-                WHERE transaction_id = %s
-                RETURNING transaction_id, group_name, name
-            """, (new_group, transaction_id))
-        
-        updated = cur.fetchall()
-        conn.commit()
-        
-        return jsonify({
-            'success': True, 
-            'updated_count': len(updated),
-            'transaction_id': transaction_id,
-            'group': new_group
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
 @app.route('/api/database_statistics')
+@track_api_call()
 def get_database_statistics():
     print("\n=== Database Statistics Debug ===")
     conn = get_db_connection()
@@ -620,32 +513,6 @@ def get_database_statistics():
     finally:
         cur.close()
         conn.close()
-
-
-@app.route('/api/categories')
-def get_categories():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    
-    try:
-        query = """
-        SELECT DISTINCT category 
-        FROM transactions 
-        WHERE amount > 0 
-        AND category IS NOT NULL 
-        AND LOWER(COALESCE(category, '')) NOT LIKE '%transfer%'
-        ORDER BY category
-        """
-        cur.execute(query)
-        categories = [row[0] for row in cur.fetchall()]
-        return jsonify({'categories': categories})
-    except Exception as e:
-        print(f"Error getting categories: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-    finally:
-        cur.close()
-        conn.close()
-
 
 
 if __name__ == '__main__':

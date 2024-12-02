@@ -490,7 +490,7 @@
 
             // Populate category filter
             $.ajax({
-                url: '/api/categories',
+                url: '/transactions/api/categories',
                 method: 'GET',
                 success: function(response) {
                     const categoryFilter = $('#category-filter');

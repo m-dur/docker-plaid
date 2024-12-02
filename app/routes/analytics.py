@@ -4,6 +4,7 @@ from dateutil.relativedelta import relativedelta
 from financial_data.utils.db_connection import get_db_connection
 from psycopg2.extras import RealDictCursor
 import calendar
+from utils.api_tracker import track_api_call
 
 analytics_bp = Blueprint('analytics', __name__)
 
@@ -24,6 +25,7 @@ def net_income():
     return render_template('net_income.html')
 
 @analytics_bp.route('/api/expenses/summary')
+@track_api_call()
 def expenses_summary():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -371,6 +373,7 @@ def expenses_group_monthly():
         conn.close()
 
 @analytics_bp.route('/api/income/summary')
+@track_api_call()
 def income_summary():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -605,12 +608,27 @@ def expenses_daily():
     category = request.args.get('category', 'all')
     month = request.args.get('month')
     
-    conn = get_db_connection()
-    cur = conn.cursor()
+    # Enhanced logging
+    current_app.logger.info("\n=== Expenses Daily Datetime Debug ===")
+    current_app.logger.info(f"Input month parameter: {month}")
+    current_app.logger.info(f"Category parameter: {category}")
+    
+    today = datetime.now().date()
+    current_app.logger.info(f"Current system date (today): {today}")
+    
+    conn = None
+    cur = None
     
     try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
         current_month = datetime.strptime(month, '%Y-%m')
         prior_month = current_month - relativedelta(months=1)
+        
+        current_app.logger.info(f"Parsed current_month: {current_month}")
+        current_app.logger.info(f"Calculated prior_month: {prior_month}")
+        current_app.logger.info(f"Is today in current month? {current_month.year == today.year and current_month.month == today.month}")
         
         _, last_day = calendar.monthrange(current_month.year, current_month.month)
         _, prior_last_day = calendar.monthrange(prior_month.year, prior_month.month)
@@ -619,6 +637,11 @@ def expenses_daily():
         current_end = current_month.replace(day=last_day)
         prior_start = prior_month.replace(day=1)
         prior_end = prior_month.replace(day=prior_last_day)
+        
+        current_app.logger.debug("Date Ranges:")
+        current_app.logger.debug(f"Current month: {current_start} to {current_end}")
+        current_app.logger.debug(f"Prior month: {prior_start} to {prior_end}")
+        current_app.logger.debug(f"Current day: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         
         base_query = """
         WITH RECURSIVE dates AS (
@@ -666,11 +689,13 @@ def expenses_daily():
         })
         
     except Exception as e:
-        print(f"Error in expenses_daily: {str(e)}")
+        current_app.logger.error(f"Error in expenses_daily: {str(e)}")
         return jsonify({'error': str(e)}), 500
     finally:
-        cur.close()
-        conn.close()
+        if cur is not None:
+            cur.close()
+        if conn is not None:
+            conn.close()
 
 @analytics_bp.route('/api/expenses/group_daily')
 def expenses_group_daily():

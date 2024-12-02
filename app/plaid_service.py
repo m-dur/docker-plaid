@@ -24,6 +24,7 @@ from plaid.model.item_get_request import ItemGetRequest
 from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
 from plaid.model.sandbox_item_fire_webhook_request import SandboxItemFireWebhookRequest
 from plaid.model.webhook_type import WebhookType
+from utils.api_tracker import track_plaid_call
 from financial_data.utils.db_connection import get_db_connection
 from psycopg2.extras import RealDictCursor
 
@@ -163,6 +164,7 @@ def get_saved_access_tokens():
         cur.close()
         conn.close()
 
+@track_plaid_call(product='auth', operation='exchange_token')
 def get_access_token(public_token):
     client = create_plaid_client()
     exchange_request = ItemPublicTokenExchangeRequest(
@@ -199,6 +201,7 @@ def create_plaid_client():
     api_client = ApiClient(configuration)
     return plaid_api.PlaidApi(api_client)
 
+@track_plaid_call(product='transactions', operation='sync')
 def get_transactions_sync(access_token, cursor=None, institution_id=None):
     """Fetch transactions using the sync endpoint"""
     client = create_plaid_client()
@@ -234,15 +237,15 @@ def get_transactions_sync(access_token, cursor=None, institution_id=None):
         print(f"❌ Error in transaction sync: {str(e)}")
         raise
 
-
+@track_plaid_call(product='link', operation='create_token')
 def create_and_store_link_token():
     """Create and store a link token in the session"""
     try:
         client = create_plaid_client()
-        webhook_url = f"{Config.APP_URL}/webhook"  # Add webhook URL
+        webhook_url = f"{Config.APP_URL}/webhook"
         
         request = LinkTokenCreateRequest(
-            products=[Products("transactions")],  # Core product
+            products=[Products("transactions")],
             required_if_supported_products=[
                 Products("liabilities"),
                 Products("investments")
@@ -250,7 +253,7 @@ def create_and_store_link_token():
             client_name="Financial Data Fetcher",
             country_codes=[CountryCode('US')],
             language='en',
-            webhook=webhook_url,  # Add webhook URL here
+            webhook=webhook_url,
             user=LinkTokenCreateRequestUser(
                 client_user_id=str(time.time())
             )
@@ -258,7 +261,6 @@ def create_and_store_link_token():
         response = client.link_token_create(request)
         token = response['link_token']
         
-        # Store in session and file
         session['link_token'] = token
         save_link_token(token)
         
@@ -272,8 +274,7 @@ def save_link_token(token):
     with open('link_token.json', 'w') as f:
         json.dump({'link_token': token}, f)
 
-
-
+@track_plaid_call(product='accounts', operation='get')
 def get_accounts(access_token):
     """Get accounts from Plaid"""
     try:
@@ -285,6 +286,7 @@ def get_accounts(access_token):
         print(f"Error getting accounts: {e}")
         return []
 
+@track_plaid_call(product='accounts', operation='get_balances')
 def get_bank_balances(access_token):
     """Get bank balances from Plaid"""
     try:
@@ -296,6 +298,7 @@ def get_bank_balances(access_token):
         print(f"Error getting balances: {e}")
         return []
 
+@track_plaid_call(product='liabilities', operation='get')
 def get_liabilities(access_token):
     try:
         client = create_plaid_client()
@@ -313,44 +316,31 @@ def get_liabilities(access_token):
             if account.subtype and str(account.subtype).lower().find('student') != -1
         ]
         
-        # Step 1: Fetch accounts and filter for credit cards and student loans
         account_ids = credit_accounts + student_accounts
-
+        
         if not account_ids:
             print("No credit card or student loan accounts found.")
             return [], []
-
-        # Step 2: Modify the LiabilitiesGetRequest to include only specified account_ids
+            
         request = LiabilitiesGetRequest(
             access_token=access_token,
             options=LiabilitiesGetRequestOptions(
                 account_ids=account_ids
             )
         )
-
+        
         try:
             response = client.liabilities_get(request)
-            #print("Successfully retrieved liabilities data from Plaid")
         except plaid.ApiException as e:
             print(f"Plaid API error getting liabilities: {e.body}")
             return [], []
-
+            
         liabilities = response.get('liabilities', {})
-
-        # Process student loans
         student_loans = liabilities.get('student', [])
-        #print(f"Found {len(student_loans)} student loans")
-
-        # Process credit cards
         credit_cards = liabilities.get('credit', [])
-        #print(f"Found {len(credit_cards)} credit cards")
-
-        #print("\nLiabilities response:")
-        #print(f"Student loans found: {len(student_loans)}")
-        #print(f"Credit cards found: {len(credit_cards)}")
-
+        
         return student_loans, credit_cards
-
+        
     except plaid.ApiException as e:
         error_response = json.loads(e.body)
         print(f"Plaid API error: {error_response.get('error_code')} - {error_response.get('error_message')}")
@@ -359,43 +349,36 @@ def get_liabilities(access_token):
         print(f"\nError in get_liabilities: {str(e)}")
         raise
 
+@track_plaid_call(product='investments', operation='get_holdings')
 def get_investments(access_token):
     client = create_plaid_client()
     request = InvestmentsHoldingsGetRequest(access_token=access_token)
     response = client.investments_holdings_get(request)
     return response.holdings, response.securities, response.accounts
 
+@track_plaid_call(product='institutions', operation='get_by_id')
 def get_institution_info(access_token):
     """Get institution info from Plaid"""
     try:
-        #print("\nDebug - get_institution_info started")
         client = create_plaid_client()
         
-        # Get item info first
-        #print("Debug - Getting item info")
         item_request = ItemGetRequest(access_token=access_token)
         item_response = client.item_get(item_request)
         institution_id = item_response.item.institution_id
-        #print(f"Debug - Got institution_id: {institution_id}")
         
-        # Get institution details
-        #print("Debug - Getting institution details")
         request = InstitutionsGetByIdRequest(
             institution_id=institution_id,
             country_codes=[CountryCode('US')]
         )
         response = client.institutions_get_by_id(request)
-        #print(f"Debug - Got institution response: {response}")
         
         if not response or not response.institution:
             raise Exception("No institution data received from Plaid")
             
         institution = response.institution
         
-        # Convert products enum to strings
         products_list = [str(product) for product in institution.products]
         
-        # Create base institution info with only required fields
         institution_info = {
             'institution_id': institution.institution_id,
             'name': institution.name,
@@ -405,13 +388,11 @@ def get_institution_info(access_token):
             'billed_products': [str(product) for product in getattr(institution, 'billed_products', [])]
         }
         
-        # Add optional fields if they exist
         if hasattr(institution, 'url'):
             institution_info['url'] = institution.url
         if hasattr(institution, 'refresh_interval'):
             institution_info['refresh_interval'] = institution.refresh_interval
             
-        # Add status if available
         if hasattr(institution, 'status') and institution.status is not None:
             if hasattr(institution.status, 'item_logins') and institution.status.item_logins is not None:
                 institution_info['status'] = ('HEALTHY' 
@@ -424,6 +405,7 @@ def get_institution_info(access_token):
         print(f"Error getting institution info: {str(e)}")
         raise Exception(f"Failed to get institution info: {str(e)}")
 
+@track_plaid_call(product='item', operation='get')
 def get_item(access_token):
     """Get item info from Plaid"""
     try:
@@ -451,12 +433,12 @@ def get_access_token_by_item_id(item_id):
         cur.close()
         conn.close()
 
+@track_plaid_call(product='sandbox', operation='fire_webhook')
 def fire_sandbox_webhook(access_token):
     """Fire a test webhook in sandbox mode"""
     client = create_plaid_client()
     
     try:
-        # Get the item_id first
         item = get_item(access_token)
         if not item:
             raise Exception("Could not get item information")
@@ -470,7 +452,6 @@ def fire_sandbox_webhook(access_token):
         response = client.sandbox_item_fire_webhook(request)
         print(f"Webhook fired response: {response}")
         
-        # For testing the webhook directly
         print(f"Test with: curl -X POST {Config.APP_URL}/webhook \\")
         print('  -H "Content-Type: application/json" \\')
         print(f'  -d \'{{"webhook_type": "TRANSACTIONS", "webhook_code": "SYNC_UPDATES_AVAILABLE", "item_id": "{item.item_id}"}}\'')
