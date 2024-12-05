@@ -4,7 +4,6 @@ from dateutil.relativedelta import relativedelta
 from financial_data.utils.db_connection import get_db_connection
 from psycopg2.extras import RealDictCursor
 import calendar
-from utils.api_tracker import track_api_call
 
 analytics_bp = Blueprint('analytics', __name__)
 
@@ -25,7 +24,6 @@ def net_income():
     return render_template('net_income.html')
 
 @analytics_bp.route('/api/expenses/summary')
-@track_api_call()
 def expenses_summary():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -373,7 +371,6 @@ def expenses_group_monthly():
         conn.close()
 
 @analytics_bp.route('/api/income/summary')
-@track_api_call()
 def income_summary():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -608,49 +605,35 @@ def expenses_daily():
     category = request.args.get('category', 'all')
     month = request.args.get('month')
     
-    # Enhanced logging
-    current_app.logger.info("\n=== Expenses Daily Datetime Debug ===")
-    current_app.logger.info(f"Input month parameter: {month}")
-    current_app.logger.info(f"Category parameter: {category}")
-    
-    today = datetime.now().date()
-    current_app.logger.info(f"Current system date (today): {today}")
-    
-    conn = None
-    cur = None
-    
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         
+        # Parse the selected month
         current_month = datetime.strptime(month, '%Y-%m')
         prior_month = current_month - relativedelta(months=1)
         
-        current_app.logger.info(f"Parsed current_month: {current_month}")
-        current_app.logger.info(f"Calculated prior_month: {prior_month}")
-        current_app.logger.info(f"Is today in current month? {current_month.year == today.year and current_month.month == today.month}")
-        
+        # Get the last day of each month
         _, last_day = calendar.monthrange(current_month.year, current_month.month)
         _, prior_last_day = calendar.monthrange(prior_month.year, prior_month.month)
         
+        # Set exact date ranges
         current_start = current_month.replace(day=1)
         current_end = current_month.replace(day=last_day)
         prior_start = prior_month.replace(day=1)
         prior_end = prior_month.replace(day=prior_last_day)
-        
-        current_app.logger.debug("Date Ranges:")
-        current_app.logger.debug(f"Current month: {current_start} to {current_end}")
-        current_app.logger.debug(f"Prior month: {prior_start} to {prior_end}")
-        current_app.logger.debug(f"Current day: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         
         base_query = """
         WITH RECURSIVE dates AS (
             SELECT generate_series(%s::date, %s::date, '1 day'::interval)::date AS date
         ),
         daily_totals AS (
-            SELECT date::date, COALESCE(SUM(amount), 0) as daily_amount
+            SELECT 
+                date::date, 
+                COALESCE(SUM(amount), 0) as daily_amount
             FROM transactions 
-            WHERE date >= %s AND date <= %s
+            WHERE date >= %s::date 
+            AND date <= %s::date
             AND amount > 0
             AND LOWER(COALESCE(category, '')) NOT LIKE '%%transfer%%'
             {category_filter}
@@ -685,17 +668,16 @@ def expenses_daily():
             'dates': [row[0].strftime('%Y-%m-%d') for row in current_results],
             'amounts': [float(row[1]) for row in current_results],
             'prior_dates': [row[0].strftime('%Y-%m-%d') for row in prior_results],
-            'prior_amounts': [float(row[1]) for row in prior_results]
+            'prior_amounts': [float(row[1]) for row in prior_results],
+            'current_date': current_end.isoformat()
         })
         
     except Exception as e:
         current_app.logger.error(f"Error in expenses_daily: {str(e)}")
         return jsonify({'error': str(e)}), 500
     finally:
-        if cur is not None:
-            cur.close()
-        if conn is not None:
-            conn.close()
+        cur.close()
+        conn.close()
 
 @analytics_bp.route('/api/expenses/group_daily')
 def expenses_group_daily():

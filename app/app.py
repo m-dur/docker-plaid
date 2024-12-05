@@ -21,7 +21,6 @@ from psycopg2.extras import RealDictCursor
 from plaid.model.item_remove_request import ItemRemoveRequest
 from routes.analytics import analytics_bp
 from routes.transactions import transactions_bp
-from utils.api_tracker import track_api_call
 import logging
 
 # Then create the Flask app
@@ -38,7 +37,6 @@ app.register_blueprint(analytics_bp)
 app.register_blueprint(transactions_bp, url_prefix='/transactions')
 
 @app.route('/')
-@track_api_call()
 def index():
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -66,7 +64,6 @@ def index():
         conn.close()
 
 @app.route('/exchange_public_token', methods=['POST'])
-@track_api_call(is_plaid=True)
 def exchange_public_token():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -116,7 +113,6 @@ def exchange_public_token():
         conn.close()
 
 @app.route('/fetch_financial_data', methods=['POST'])
-@track_api_call()
 def fetch_financial_data():
     try:
         conn = get_db_connection()
@@ -158,7 +154,6 @@ def fetch_financial_data():
         conn.close()
 
 @app.route('/remove_institution', methods=['POST'])
-@track_api_call(is_plaid=True)
 def remove_institution():
     try:
         data = request.get_json()
@@ -236,7 +231,6 @@ def remove_institution():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/data')
-@track_api_call()
 def data():
     schema_diagram = generate_db_schema()
     return render_template('data.html', schema_diagram=schema_diagram)
@@ -258,7 +252,6 @@ def run_query():
         }), 500
 
 @app.route('/export_query')
-@track_api_call()
 def export_query():
     query = request.args.get('query')
     
@@ -293,7 +286,6 @@ def export_query():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/webhook', methods=['POST'])
-@track_api_call(is_plaid=True)
 def webhook_handler():
     print("----------------------------------------")
     print("Webhook received!")
@@ -370,7 +362,6 @@ def webhook_handler():
     return jsonify({'message': 'Webhook received but no action taken'}), 200
 
 @app.route('/test_webhook', methods=['POST'])
-@track_api_call(is_plaid=True)
 def test_webhook():
     try:
         print("Starting test_webhook...")
@@ -417,7 +408,6 @@ def test_webhook():
         }), 500
 
 @app.route('/api/institution_metadata/<institution_id>')
-@track_api_call()
 def get_institution_metadata(institution_id):
     conn = get_db_connection()
     cur = conn.cursor()
@@ -485,7 +475,6 @@ def get_institution_metadata(institution_id):
         conn.close()
 
 @app.route('/api/database_statistics')
-@track_api_call()
 def get_database_statistics():
     print("\n=== Database Statistics Debug ===")
     conn = get_db_connection()

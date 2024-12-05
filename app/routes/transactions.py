@@ -1,7 +1,6 @@
 from flask import Blueprint, jsonify, request
 from financial_data.utils.db_connection import get_db_connection
 from psycopg2.extras import RealDictCursor
-from utils.api_tracker import track_api_call
 
 transactions_bp = Blueprint('transactions', __name__)
 
@@ -10,7 +9,6 @@ def transactions():
     return render_template('transactions.html')
 
 @transactions_bp.route('/api/transactions/update_category', methods=['POST'])
-@track_api_call()
 def update_transaction_category():
     try:
         transaction_id = request.json.get('transaction_id')
