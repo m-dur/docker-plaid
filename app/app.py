@@ -503,6 +503,15 @@ def get_database_statistics():
         cur.close()
         conn.close()
 
+@app.route('/api/expenses/chart', methods=['GET'])
+def get_expense_chart_data():
+    selected_month = request.args.get('month')
+    selected_category = request.args.get('category')
+    
+    app.logger.info(f"Expense Chart Request - Month: {selected_month}, Category: {selected_category}")
+    app.logger.info(f"Current Server Time: {datetime.now().isoformat()}")
+    
+    # ... rest of the existing code ...
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)

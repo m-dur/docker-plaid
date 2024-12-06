@@ -176,9 +176,17 @@
             let expensesData = null;
             let table = null;
 
+            // Load saved filters from localStorage
+            const savedGroup = localStorage.getItem('expensesGroupFilter') || 'all';
+            const savedMonth = localStorage.getItem('expensesGroupMonthFilter') || new Date().toISOString().slice(0, 7); // Current month as default
+
             // Populate month filter on page load
             populateMonthFilter();
             
+            // Set the saved filters after populating the dropdowns
+            $('#category-filter').val(savedGroup);
+            $('#month-filter').val(savedMonth);
+
             // Load expenses summary data
             $.ajax({
                 url: '/api/expenses/group_summary',
@@ -187,18 +195,22 @@
                     expensesData = data;
                     updateDashboard(data);
                     
-                    // Populate group filter instead of category filter
+                    // Populate group filter
                     const groups = ['all', ...data.groups.map(g => g.group_name)];
                     const filterSelect = $('#category-filter');
                     groups.forEach(group => {
                         filterSelect.append(`<option value="${group}">${group === 'all' ? 'All Groups' : group}</option>`);
                     });
+                    
+                    // Set the saved group after populating options
+                    filterSelect.val(savedGroup);
                 }
             });
 
             // Group filter change handler
             $('#category-filter').on('change', function() {
                 const selectedGroup = $(this).val();
+                localStorage.setItem('expensesGroupFilter', selectedGroup);
                 
                 if (!expensesData) return;
                 
@@ -218,6 +230,14 @@
                     
                     updateDashboard(filteredData);
                 }
+            });
+
+            // Month filter change handler
+            $('#month-filter').on('change', function() {
+                const selectedMonth = $(this).val();
+                localStorage.setItem('expensesGroupMonthFilter', selectedMonth);
+                updateChart();
+                updateDashboard();
             });
 
             function updateDashboard(data) {
@@ -309,68 +329,76 @@
                             month: selectedMonth
                         },
                         success: function(chartData) {
-                            if (!chartData.dates || !chartData.amounts) {
-                                console.error('Invalid chart data received');
-                                return;
-                            }
-                            
-                            const currentDate = new Date().toISOString().slice(0, 10);
+                            // Convert server date string to local date object
+                            const currentDate = chartData.current_date;
                             const currentIndex = chartData.dates.indexOf(currentDate);
-                            
-                            const trace1 = {
-                                x: chartData.dates,
-                                y: chartData.amounts,
-                                type: 'scatter',
-                                mode: 'lines',
-                                line: {
-                                    color: '#0A85EA',
-                                    width: 2
+
+                            console.log('Debug - Date Info:', {
+                                currentDate,
+                                dates: chartData.dates,
+                                currentIndex
+                            });
+
+                            // Create traces array with base data
+                            const traces = [
+                                // Current month line (only up to current day)
+                                {
+                                    x: chartData.dates.slice(0, currentIndex + 1),  // Only include dates up to current day
+                                    y: chartData.amounts.slice(0, currentIndex + 1), // Only include amounts up to current day
+                                    type: 'scatter',
+                                    mode: 'lines',
+                                    line: { color: '#2E5266' },
+                                    name: 'Current Month',
+                                    hovertemplate: '$%{y:.2f} Current Month<extra></extra>'
                                 },
-                                name: 'Current Month'
-                            };
-                            
-                            const trace2 = {
-                                x: [currentDate],
-                                y: [chartData.amounts[currentIndex]],
-                                type: 'bar',
-                                width: 0.5,
-                                marker: {
-                                    color: '#0A85EA',
-                                    opacity: 0.7,
+                                // Prior month line (full month)
+                                {
+                                    x: chartData.dates,  // Keep all dates for prior month
+                                    y: chartData.prior_amounts,
+                                    type: 'scatter',
+                                    mode: 'lines',
                                     line: {
-                                        color: '#0A85EA',
+                                        color: '#FFA500',
+                                        width: 2,
+                                        dash: 'dot'
+                                    },
+                                    name: 'Prior Month',
+                                    hovertemplate: '$%{y:.2f} Prior Month<extra></extra>'
+                                }
+                            ];
+
+                            // Only add current day marker if it exists in our data
+                            if (currentIndex !== -1) {
+                                // Current day vertical line
+                                traces.push({
+                                    x: [currentDate, currentDate],
+                                    y: [0, Math.max(chartData.amounts[currentIndex], chartData.prior_amounts[currentIndex]) * 1.1],
+                                    type: 'scatter',
+                                    mode: 'lines',
+                                    line: { 
+                                        color: 'rgba(0, 0, 0, 0.15)', 
                                         width: 2
-                                    }
-                                },
-                                name: 'Current Day'
-                            };
-                            
-                            const trace3 = {
-                                x: chartData.dates,
-                                y: chartData.prior_amounts,
-                                type: 'scatter',
-                                mode: 'lines',
-                                line: {
-                                    color: '#FFA500',
-                                    width: 2,
-                                    dash: 'dot'
-                                },
-                                name: 'Prior Month'
-                            };
-                            
-                            const trace4 = {
-                                x: [currentDate, currentDate],
-                                y: [0, chartData.amounts[currentIndex]],
-                                type: 'scatter',
-                                mode: 'lines',
-                                line: {
-                                    color: '#0A85EA',
-                                    width: 2,
-                                    dash: 'solid'
-                                },
-                                showlegend: false
-                            };
-                            
+                                    },
+                                    hoverinfo: 'none',
+                                    showlegend: false
+                                });
+
+                                // Current day bar
+                                traces.push({
+                                    x: [currentDate],
+                                    y: [chartData.amounts[currentIndex]],
+                                    type: 'bar',
+                                    width: 0.5,
+                                    marker: {
+                                        color: '#0A85EA',
+                                        opacity: 0.7,
+                                        line: { color: '#0A85EA', width: 2 }
+                                    },
+                                    name: 'Current Day',
+                                    hovertemplate: '$%{y:.2f} Current Day<extra></extra>'
+                                });
+                            }
+
                             const layout = {
                                 title: {
                                     text: `Daily Expenses - ${selectedGroup === 'all' ? 'All Groups' : selectedGroup}`,
@@ -378,7 +406,12 @@
                                 },
                                 xaxis: { 
                                     title: 'Date',
-                                    tickangle: -45
+                                    tickangle: -45,
+                                    dtick: 'D1',  // Show every day
+                                    tickformat: '%b %d',  // Format as "Dec 04"
+                                    tickmode: 'linear',
+                                    tick0: chartData.dates[0],  // Start from first date
+                                    showgrid: true
                                 },
                                 yaxis: { 
                                     title: 'Cumulative Amount',
@@ -386,7 +419,7 @@
                                 },
                                 height: 400,
                                 margin: {
-                                    b: 100,
+                                    b: 100,  // Increased bottom margin to accommodate all date labels
                                     t: 50,
                                     l: 80,
                                     r: 40
@@ -399,7 +432,7 @@
                                     {
                                         x: currentDate,
                                         y: chartData.amounts[currentIndex],
-                                        text: `<b>$${chartData.amounts[currentIndex].toFixed(2)}</b><br>Current Month`,
+                                        text: `<b>$${chartData.amounts[currentIndex].toFixed(2)}</b>`,
                                         showarrow: true,
                                         arrowhead: 2,
                                         ax: 40,
@@ -435,7 +468,7 @@
                                 ]
                             };
                             
-                            Plotly.newPlot('monthly-chart', [trace1, trace2, trace3, trace4], layout);
+                            Plotly.newPlot('monthly-chart', traces, layout);
                         }
                     });
                 } else {

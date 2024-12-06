@@ -1,9 +1,10 @@
 from flask import Blueprint, jsonify, request, render_template, current_app
-from datetime import datetime
+from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from financial_data.utils.db_connection import get_db_connection
 from psycopg2.extras import RealDictCursor
 import calendar
+from zoneinfo import ZoneInfo
 
 analytics_bp = Blueprint('analytics', __name__)
 
@@ -609,41 +610,47 @@ def expenses_daily():
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Parse the selected month
-        current_month = datetime.strptime(month, '%Y-%m')
-        prior_month = current_month - relativedelta(months=1)
+        current_timestamp = datetime.now(ZoneInfo("America/Los_Angeles"))
+        pacific_time = current_timestamp
         
-        # Get the last day of each month
-        _, last_day = calendar.monthrange(current_month.year, current_month.month)
+        current_month = datetime.strptime(month, '%Y-%m').replace(tzinfo=ZoneInfo("America/Los_Angeles"))
+        prior_month = current_month - relativedelta(months=1)
+
+        # Get the last day for both months
+        _, current_last_day = calendar.monthrange(current_month.year, current_month.month)
         _, prior_last_day = calendar.monthrange(prior_month.year, prior_month.month)
         
         # Set exact date ranges
         current_start = current_month.replace(day=1)
-        current_end = current_month.replace(day=last_day)
+        current_end = current_month.replace(day=current_last_day)
         prior_start = prior_month.replace(day=1)
         prior_end = prior_month.replace(day=prior_last_day)
         
         base_query = """
         WITH RECURSIVE dates AS (
-            SELECT generate_series(%s::date, %s::date, '1 day'::interval)::date AS date
+            SELECT generate_series(
+                DATE_TRUNC('month', %s::timestamptz),
+                (DATE_TRUNC('month', %s::timestamptz) + INTERVAL '1 month - 1 day'),
+                '1 day'::interval
+            )::date AS date
         ),
         daily_totals AS (
             SELECT 
-                date::date, 
+                EXTRACT(DAY FROM (date AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date) as day_of_month,
                 COALESCE(SUM(amount), 0) as daily_amount
             FROM transactions 
-            WHERE date >= %s::date 
-            AND date <= %s::date
+            WHERE date >= %s::timestamptz 
+            AND date < %s::timestamptz + INTERVAL '1 day'
             AND amount > 0
             AND LOWER(COALESCE(category, '')) NOT LIKE '%%transfer%%'
             {category_filter}
-            GROUP BY date::date
+            GROUP BY EXTRACT(DAY FROM (date AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date)
         )
         SELECT 
             d.date,
             COALESCE(SUM(dt.daily_amount) OVER (ORDER BY d.date), 0) as cumulative_amount
         FROM dates d
-        LEFT JOIN daily_totals dt ON d.date = dt.date
+        LEFT JOIN daily_totals dt ON EXTRACT(DAY FROM d.date) = dt.day_of_month
         ORDER BY d.date;
         """
         
@@ -658,18 +665,26 @@ def expenses_daily():
         current_results = cur.fetchall()
         
         # Get prior month data
-        params = [prior_start, prior_end, prior_start, prior_end]
+        params = [current_start, current_end, prior_start, prior_end]
         if category != 'all':
             params.append(category)
         cur.execute(query, tuple(params))
         prior_results = cur.fetchall()
+
+        # Pad prior month results if needed
+        prior_amounts = [float(row[1]) for row in prior_results]
+        if len(prior_amounts) < len(current_results):
+            last_value = prior_amounts[-1] if prior_amounts else 0
+            prior_amounts.extend([last_value] * (len(current_results) - len(prior_amounts)))
+
+        current_pacific_date = pacific_time.strftime('%Y-%m-%d')
+        current_dates = [row[0].strftime('%Y-%m-%d') for row in current_results]
         
         return jsonify({
-            'dates': [row[0].strftime('%Y-%m-%d') for row in current_results],
+            'dates': current_dates,
             'amounts': [float(row[1]) for row in current_results],
-            'prior_dates': [row[0].strftime('%Y-%m-%d') for row in prior_results],
-            'prior_amounts': [float(row[1]) for row in prior_results],
-            'current_date': current_end.isoformat()
+            'prior_amounts': prior_amounts,
+            'current_date': current_pacific_date
         })
         
     except Exception as e:
@@ -684,64 +699,85 @@ def expenses_group_daily():
     group = request.args.get('group', 'all')
     month = request.args.get('month')
     
-    conn = get_db_connection()
-    cur = conn.cursor()
-    
     try:
-        current_month = datetime.strptime(month, '%Y-%m')
-        prior_month = current_month - relativedelta(months=1)
+        conn = get_db_connection()
+        cur = conn.cursor()
         
-        _, last_day = calendar.monthrange(current_month.year, current_month.month)
+        current_timestamp = datetime.now(ZoneInfo("America/Los_Angeles"))
+        pacific_time = current_timestamp
+        
+        current_month = datetime.strptime(month, '%Y-%m').replace(tzinfo=ZoneInfo("America/Los_Angeles"))
+        prior_month = current_month - relativedelta(months=1)
+
+        # Get the last day for both months
+        _, current_last_day = calendar.monthrange(current_month.year, current_month.month)
         _, prior_last_day = calendar.monthrange(prior_month.year, prior_month.month)
         
+        # Set exact date ranges
         current_start = current_month.replace(day=1)
-        current_end = current_month.replace(day=last_day)
+        current_end = current_month.replace(day=current_last_day)
         prior_start = prior_month.replace(day=1)
         prior_end = prior_month.replace(day=prior_last_day)
         
         base_query = """
         WITH RECURSIVE dates AS (
-            SELECT generate_series(%s::date, %s::date, '1 day'::interval)::date AS date
+            SELECT generate_series(
+                DATE_TRUNC('month', %s::timestamptz),
+                (DATE_TRUNC('month', %s::timestamptz) + INTERVAL '1 month - 1 day'),
+                '1 day'::interval
+            )::date AS date
         ),
         daily_totals AS (
-            SELECT date::date, COALESCE(SUM(amount), 0) as daily_amount
+            SELECT 
+                EXTRACT(DAY FROM (date AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date) as day_of_month,
+                COALESCE(SUM(amount), 0) as daily_amount
             FROM transactions 
-            WHERE date >= %s AND date <= %s
+            WHERE date >= %s::timestamptz 
+            AND date < %s::timestamptz + INTERVAL '1 day'
             AND amount > 0
             AND LOWER(COALESCE(group_name, '')) NOT LIKE '%%transfer%%'
             {group_filter}
-            GROUP BY date::date
+            GROUP BY EXTRACT(DAY FROM (date AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date)
         )
         SELECT 
             d.date,
             COALESCE(SUM(dt.daily_amount) OVER (ORDER BY d.date), 0) as cumulative_amount
         FROM dates d
-        LEFT JOIN daily_totals dt ON d.date = dt.date
+        LEFT JOIN daily_totals dt ON EXTRACT(DAY FROM d.date) = dt.day_of_month
         ORDER BY d.date;
         """
         
         group_filter = "AND group_name = %s" if group != 'all' else ""
         query = base_query.format(group_filter=group_filter)
         
-        # Get current month data
+        # Get current month data using current month's date range
         params = [current_start, current_end, current_start, current_end]
         if group != 'all':
             params.append(group)
         cur.execute(query, tuple(params))
         current_results = cur.fetchall()
         
-        # Get prior month data
-        params = [prior_start, prior_end, prior_start, prior_end]
+        # Get prior month data using prior month's date range
+        params = [current_start, current_end, prior_start, prior_end]  # Use current dates for x-axis but prior dates for data
         if group != 'all':
             params.append(group)
         cur.execute(query, tuple(params))
         prior_results = cur.fetchall()
+
+        # Pad prior month results if needed (in case prior month was shorter)
+        prior_amounts = [float(row[1]) for row in prior_results]
+        if len(prior_amounts) < len(current_results):
+            last_value = prior_amounts[-1] if prior_amounts else 0
+            prior_amounts.extend([last_value] * (len(current_results) - len(prior_amounts)))
+
+        current_pacific_date = pacific_time.strftime('%Y-%m-%d')
+        current_dates = [row[0].strftime('%Y-%m-%d') for row in current_results]
         
         return jsonify({
-            'dates': [row[0].strftime('%Y-%m-%d') for row in current_results],
+            'dates': current_dates,
             'amounts': [float(row[1]) for row in current_results],
-            'prior_dates': [row[0].strftime('%Y-%m-%d') for row in prior_results],
-            'prior_amounts': [float(row[1]) for row in prior_results]
+            'prior_amounts': prior_amounts,
+            'current_date': current_pacific_date
         })
         
     except Exception as e:

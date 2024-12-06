@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, render_template
 from financial_data.utils.db_connection import get_db_connection
 from psycopg2.extras import RealDictCursor
 
