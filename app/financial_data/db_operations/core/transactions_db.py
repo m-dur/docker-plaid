@@ -15,9 +15,18 @@ def save_transactions_to_db(transactions_df, conn=None, cur=None):
             cur.execute("SELECT transaction_name, category FROM category_mappings")
             category_mappings = dict(cur.fetchall())
             
-            # Update categories based on mappings
+            # Get existing group mappings
+            cur.execute("SELECT transaction_name, group_name FROM group_mappings")
+            group_mappings = dict(cur.fetchall())
+            
+            # Update categories and groups based on mappings
             transactions_df['transactions']['category'] = transactions_df['transactions'].apply(
                 lambda x: category_mappings.get(x['name'], x['category']),
+                axis=1
+            )
+            
+            transactions_df['transactions']['group_name'] = transactions_df['transactions'].apply(
+                lambda x: group_mappings.get(x['name'], x['group_name']),
                 axis=1
             )
             
@@ -31,8 +40,8 @@ def save_transactions_to_db(transactions_df, conn=None, cur=None):
                     date = EXCLUDED.date,
                     name = EXCLUDED.name,
                     category = COALESCE(EXCLUDED.category, transactions.category),
+                    group_name = COALESCE(EXCLUDED.group_name, transactions.group_name),
                     merchant_name = EXCLUDED.merchant_name,
-                    group_name = EXCLUDED.group_name,
                     payment_channel = EXCLUDED.payment_channel,
                     authorized_datetime = EXCLUDED.authorized_datetime,
                     pull_date = EXCLUDED.pull_date

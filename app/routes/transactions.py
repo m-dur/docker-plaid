@@ -19,44 +19,49 @@ def update_transaction_category():
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # First, update the category_mappings table
-        cur.execute("""
-            INSERT INTO category_mappings (transaction_name, category)
-            VALUES (%s, %s)
-            ON CONFLICT (transaction_name) 
-            DO UPDATE SET 
-                category = EXCLUDED.category,
-                last_updated = CURRENT_TIMESTAMP
-        """, (transaction_name, new_category))
-        
-        # Then update the transactions table
-        if update_all:
-            cur.execute("""
-                UPDATE transactions 
-                SET category = %s
-                WHERE name = %s
-                RETURNING transaction_id, category, name
-            """, (new_category, transaction_name))
-        else:
+        try:
+            # Start transaction
+            cur.execute("BEGIN")
+            
+            # Always update the specific transaction
             cur.execute("""
                 UPDATE transactions 
                 SET category = %s
                 WHERE transaction_id = %s
                 RETURNING transaction_id, category, name
             """, (new_category, transaction_id))
-        
-        updated = cur.fetchall()
-        conn.commit()
-        
-        return jsonify({
-            'success': True, 
-            'updated_count': len(updated),
-            'transaction_id': transaction_id,
-            'category': new_category
-        })
-        
+            
+            # Always create/update the mapping
+            cur.execute("""
+                INSERT INTO category_mappings (transaction_name, category)
+                VALUES (%s, %s)
+                ON CONFLICT (transaction_name) 
+                DO UPDATE SET 
+                    category = EXCLUDED.category,
+                    last_updated = CURRENT_TIMESTAMP
+            """, (transaction_name, new_category))
+            
+            # Only update other existing transactions if update_all is True
+            if update_all:
+                cur.execute("""
+                    UPDATE transactions 
+                    SET category = %s
+                    WHERE name = %s
+                    AND transaction_id != %s
+                """, (new_category, transaction_name, transaction_id))
+            
+            conn.commit()
+            return jsonify({
+                'success': True,
+                'transaction_id': transaction_id,
+                'category': new_category
+            })
+            
+        except Exception as e:
+            cur.execute("ROLLBACK")
+            raise e
+            
     except Exception as e:
-        current_app.logger.error(f"Error updating category: {str(e)}")
         return jsonify({'error': str(e)}), 500
     finally:
         if cur:
@@ -75,43 +80,55 @@ def update_transaction_group():
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # First, update the group_mappings table
-        cur.execute("""
-            INSERT INTO group_mappings (transaction_name, group_name)
-            VALUES (%s, %s)
-            ON CONFLICT (transaction_name) 
-            DO UPDATE SET 
-                group_name = EXCLUDED.group_name,
-                last_updated = CURRENT_TIMESTAMP
-        """, (transaction_name, new_group))
-        
-        # Then update the transactions table
-        if update_all:
-            cur.execute("""
-                UPDATE transactions 
-                SET group_name = %s
-                WHERE name = %s
-                RETURNING transaction_id, group_name, name
-            """, (new_group, transaction_name))
-        else:
+        try:
+            # Start transaction
+            cur.execute("BEGIN")
+            
+            # Always update the specific transaction
             cur.execute("""
                 UPDATE transactions 
                 SET group_name = %s
                 WHERE transaction_id = %s
                 RETURNING transaction_id, group_name, name
             """, (new_group, transaction_id))
-        
-        updated = cur.fetchall()
-        conn.commit()
-        
-        return jsonify({
-            'success': True, 
-            'updated_count': len(updated),
-            'transaction_id': transaction_id,
-            'group': new_group
-        })
+            
+            # Always create/update the mapping
+            cur.execute("""
+                INSERT INTO group_mappings (transaction_name, group_name)
+                VALUES (%s, %s)
+                ON CONFLICT (transaction_name) 
+                DO UPDATE SET 
+                    group_name = EXCLUDED.group_name,
+                    last_updated = CURRENT_TIMESTAMP
+            """, (transaction_name, new_group))
+            
+            # Only update other existing transactions if update_all is True
+            if update_all:
+                cur.execute("""
+                    UPDATE transactions 
+                    SET group_name = %s
+                    WHERE name = %s
+                    AND transaction_id != %s
+                """, (new_group, transaction_name, transaction_id))
+            
+            conn.commit()
+            return jsonify({
+                'success': True,
+                'transaction_id': transaction_id,
+                'group': new_group
+            })
+            
+        except Exception as e:
+            cur.execute("ROLLBACK")
+            raise e
+            
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 @transactions_bp.route('/api/categories')
 def get_categories():
@@ -168,16 +185,17 @@ def get_transactions():
     
     try:
         cur.execute("""
-             SELECT 
-                t.date,  
+            SELECT 
+                t.transaction_id,
+                t.date,
+                a.account_name,
                 t.category,
                 t.group_name,
                 t.name,
-                t.amount,
-                a.account_name
+                t.amount
             FROM transactions t
             LEFT JOIN accounts a ON t.account_id = a.account_id
-            order by date desc
+            ORDER BY t.date DESC
         """)
         transactions = cur.fetchall()
         return jsonify(transactions)

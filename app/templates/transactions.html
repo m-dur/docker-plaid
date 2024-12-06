@@ -163,7 +163,7 @@
             const escapedTransactionName = transactionName ? transactionName.replace(/'/g, "\\'") : '';
             return `
                 <div class="category-display">
-                    <span class="category-text">${category || 'N/A'}</span>
+                    <span class="category-text">${category === null ? 'N/A' : category}</span>
                     <a class="edit-category" onclick="editCategory(this, '${transactionId}', '${category || ''}', '${escapedTransactionName}')">✏️</a>
                 </div>
             `;
@@ -209,7 +209,7 @@
             const updateAll = container.querySelector('.update-all-checkbox').checked;
             const transactionName = atob(encodedTransactionName);
             
-            fetch('/api/transactions/update_category', {
+            fetch('/transactions/api/transactions/update_category', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -255,7 +255,7 @@
             const escapedTransactionName = transactionName ? transactionName.replace(/'/g, "\\'") : '';
             return `
                 <div class="group-display">
-                    <span class="group-text">${group || 'N/A'}</span>
+                    <span class="group-text">${group === null ? 'N/A' : group}</span>
                     <a class="edit-group" onclick="editGroup(this, '${transactionId}', '${group || ''}', '${escapedTransactionName}')">✏️</a>
                 </div>
             `;
@@ -292,7 +292,7 @@
             const updateAll = container.querySelector('.update-all-checkbox').checked;
             const transactionName = atob(encodedTransactionName);
             
-            fetch('/api/transactions/update_group', {
+            fetch('/transactions/api/transactions/update_group', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -370,7 +370,7 @@
                                 } else if (key === 'group_name') {
                                     tableHtml += `<td>${createGroupCell(row.transaction_id, row[key], row.name)}</td>`;
                                 } else {
-                                    tableHtml += `<td>${row[key] === null ? '<span class="null-value">NULL</span>' : row[key]}</td>`;
+                                    tableHtml += `<td>${row[key] === null ? 'N/A' : row[key]}</td>`;
                                 }
                             });
                             tableHtml += '</tr>';
@@ -418,11 +418,17 @@
                                     const categoryCell = $(table.cell(dataIndex, 3).node());
                                     const groupCell = $(table.cell(dataIndex, 4).node());
                                     
+                                    // Get the actual text content, trimming whitespace
                                     const categoryText = categoryCell.find('.category-text').text().trim();
                                     const groupText = groupCell.find('.group-text').text().trim();
                                     
-                                    // Show row if either category or group is empty or N/A
-                                    return categoryText === 'N/A' || groupText === 'N/A';
+                                    // Show row if either category or group is empty (N/A or NULL)
+                                    return categoryText === 'N/A' || 
+                                           groupText === 'N/A' || 
+                                           categoryText === 'NULL' || 
+                                           groupText === 'NULL' ||
+                                           !categoryText || 
+                                           !groupText;
                                 }
                             );
                         } else {

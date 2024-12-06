@@ -11,7 +11,7 @@ select * from category_mappings;
 select * from group_mappings;
 select * from institution_cursors;
 select * from access_tokens;
-
+select * from plaid_api_calls;
 
 -- Table Creation
 drop table institutions;
@@ -168,3 +168,5 @@ CREATE TABLE api_calls (
     request_payload JSONB,    -- store request parameters
     response_payload JSONB    -- store response data (if needed)
 );
+
+DELETE FROM plaid_api_calls;
