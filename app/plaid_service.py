@@ -27,6 +27,7 @@ from plaid.model.webhook_type import WebhookType
 from utils.api_tracker import track_plaid_call
 from financial_data.utils.db_connection import get_db_connection
 from psycopg2.extras import RealDictCursor
+from plaid.model.transactions_get_request import TransactionsGetRequest
 
 
 
@@ -101,7 +102,6 @@ def delete_cursor(institution_id):
 def save_access_token(access_token, item_id, institution_id, institution_name):
     conn = get_db_connection()
     cur = conn.cursor()
-    
     try:
         # Update institutions table
         cur.execute("""
@@ -202,37 +202,50 @@ def create_plaid_client():
     return plaid_api.PlaidApi(api_client)
 
 @track_plaid_call(product='transactions', operation='sync')
-def get_transactions_sync(access_token, cursor=None, institution_id=None):
-    """Fetch transactions using the sync endpoint"""
+def get_transactions_sync(access_token, cursor=None, institution_id=None, retry_count=3, initial_delay=2):
     client = create_plaid_client()
     
-    print("\n=== Transaction Sync Debug ===")
-    print(f"Starting sync with cursor: {cursor}")
-    
     request_dict = {
-        "access_token": access_token
+        "access_token": access_token,
+        "options": {
+            "include_personal_finance_category": True,
+            "include_original_description": True,
+            "days_requested": 730  # Request maximum 2 years
+        }
     }
     
     if cursor is not None and cursor.strip():
         request_dict["cursor"] = cursor.strip()
-        print(f"Using existing cursor: {cursor}")
-    else:
-        print("No cursor provided - will fetch all transactions")
+        # For incremental updates, we don't need to specify days_requested
+        del request_dict["options"]["days_requested"]
     
     request = TransactionsSyncRequest(**request_dict)
     
     try:
-        response = client.transactions_sync(request)
-        print(f"Sync Response:")
-        print(f"- Added transactions: {len(response.added)}")
-        print(f"- Modified transactions: {len(response.modified)}")
-        print(f"- Removed transactions: {len(response.removed)}")
-        print(f"- New cursor: {response.next_cursor}")
+        all_added = []
+        all_modified = []
+        all_removed = []
         
-        if response.next_cursor and institution_id:
-            save_cursor(response.next_cursor, institution_id)
-            print("✓ New cursor saved successfully")
+        while True:
+            response = client.transactions_sync(request)
+            
+            all_added.extend(response.added)
+            all_modified.extend(response.modified)
+            all_removed.extend(response.removed)
+            
+            if not response.has_more:
+                break
+                
+            request_dict["cursor"] = response.next_cursor
+            request = TransactionsSyncRequest(**request_dict)
+        
+        # Create composite response with all transactions
+        response.added = all_added
+        response.modified = all_modified
+        response.removed = all_removed
+        
         return response
+        
     except Exception as e:
         print(f"❌ Error in transaction sync: {str(e)}")
         raise
@@ -256,7 +269,10 @@ def create_and_store_link_token():
             webhook=webhook_url,
             user=LinkTokenCreateRequestUser(
                 client_user_id=str(time.time())
-            )
+            ),
+            transactions={
+                "days_requested": 180  # Request 6 months of history
+            }
         )
         response = client.link_token_create(request)
         token = response['link_token']
@@ -288,12 +304,16 @@ def get_accounts(access_token):
 
 @track_plaid_call(product='accounts', operation='get_balances')
 def get_bank_balances(access_token):
-    """Get bank balances from Plaid"""
+    """Get bank balances from transactions sync endpoint"""
     try:
-        client = create_plaid_client()
-        request = AccountsBalanceGetRequest(access_token=access_token)
-        response = client.accounts_balance_get(request)
-        return response.accounts
+        # Get institution_id from access token
+        item = get_item(access_token)
+        institution_id = item.institution_id
+        
+        # Get fresh data from transactions sync
+        response = get_transactions_sync(access_token, None, institution_id)
+        return response.accounts if hasattr(response, 'accounts') else []
+        
     except Exception as e:
         print(f"Error getting balances: {e}")
         return []
@@ -459,4 +479,111 @@ def fire_sandbox_webhook(access_token):
         return response
     except Exception as e:
         print(f"Error firing sandbox webhook: {e}")
+        raise
+
+def save_account_balances_cache(accounts, institution_id):
+    """Cache account balances from transactions sync response"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # Store balances with timestamp
+        cur.execute("""
+            INSERT INTO account_balances_cache (
+                institution_id,
+                account_id,
+                current_balance,
+                available_balance,
+                limit_balance,
+                cached_at
+            ) VALUES %s
+            ON CONFLICT (account_id) DO UPDATE SET
+                current_balance = EXCLUDED.current_balance,
+                available_balance = EXCLUDED.available_balance,
+                limit_balance = EXCLUDED.limit_balance,
+                cached_at = EXCLUDED.cached_at
+        """, [(
+            institution_id,
+            account.account_id,
+            account.balances.current,
+            account.balances.available,
+            account.balances.limit,
+            datetime.now()
+        ) for account in accounts])
+        
+        conn.commit()
+    except Exception as e:
+        print(f"Error caching account balances: {e}")
+        conn.rollback()
+    finally:
+        cur.close()
+        conn.close()
+
+def refresh_full_history(institution_id, access_token):
+    # Delete existing cursor
+    delete_cursor(institution_id)
+    
+    # Perform fresh sync
+    return get_transactions_sync(access_token, None, institution_id)
+
+@track_plaid_call(product='transactions', operation='get')
+def get_initial_transactions(access_token, start_date=None, end_date=None, retry_count=3, retry_delay=2):
+    client = create_plaid_client()
+    
+    # Default to 2 years of history if no dates specified
+    if not start_date:
+        start_date = (datetime.now() - timedelta(days=730)).date()
+    if not end_date:
+        end_date = datetime.now().date()
+    
+    try:
+        request = TransactionsGetRequest(
+            access_token=access_token,
+            start_date=start_date,
+            end_date=end_date,
+            options={
+                "include_personal_finance_category": True,
+                "include_original_description": True,
+                "count": 500  # Add explicit count
+            }
+        )
+        
+        while retry_count > 0:
+            try:
+                all_transactions = []
+                total_transactions = None
+                offset = 0
+                
+                while total_transactions is None or len(all_transactions) < total_transactions:
+                    request.options['offset'] = offset
+                    response = client.transactions_get(request)
+                    
+                    if total_transactions is None:
+                        total_transactions = response.total_transactions
+                        print(f"Total transactions to fetch: {total_transactions}")
+                    
+                    all_transactions.extend(response.transactions)
+                    offset += len(response.transactions)
+                    print(f"Fetched {len(all_transactions)} of {total_transactions} transactions")
+                    
+                    if len(response.transactions) == 0:
+                        break
+                
+                return {
+                    'accounts': response.accounts,
+                    'transactions': all_transactions
+                }
+                
+            except Exception as e:
+                if 'PRODUCT_NOT_READY' in str(e):
+                    retry_count -= 1
+                    if retry_count > 0:
+                        print(f"Product not ready, retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                        continue
+                raise
+                
+    except Exception as e:
+        print(f"❌ Error getting initial transactions: {str(e)}")
         raise

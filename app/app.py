@@ -22,6 +22,7 @@ from plaid.model.item_remove_request import ItemRemoveRequest
 from routes.analytics import analytics_bp
 from routes.transactions import transactions_bp
 import logging
+import threading
 
 # Then create the Flask app
 app = Flask(__name__)
@@ -65,52 +66,49 @@ def index():
 
 @app.route('/exchange_public_token', methods=['POST'])
 def exchange_public_token():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    
     try:
-        # Start transaction
-        cur.execute("BEGIN")
+        data = request.get_json()
+        public_token = data['public_token']
+        metadata = data['metadata']
         
-        public_token = request.json['public_token']
-        institution_id = request.json['metadata']['institution']['institution_id']
-        institution_name = request.json['metadata']['institution']['name']
-        
+        # Create Plaid client first
         client = create_plaid_client()
+        
+        # Exchange public token
         exchange_response = client.item_public_token_exchange(
             ItemPublicTokenExchangeRequest(public_token=public_token)
         )
-        access_token = exchange_response['access_token']
-        item_id = exchange_response['item_id']
+        access_token = exchange_response.access_token
+        item_id = exchange_response.item_id
+        institution_id = metadata['institution']['institution_id']
         
-        # Get institution info before saving anything
-        institution_info = get_institution_info(access_token)
+        # Step 1: Just save access token and basic institution info
+        save_access_token(
+            access_token=access_token,
+            item_id=item_id,
+            institution_id=institution_id,
+            institution_name=metadata['institution']['name']
+        )
         
-        # For new accounts, we should start with a fresh sync
-        handler = FinancialDataHandler()
-        item_info = {
-            'institution_id': institution_id,
-            'is_new_account': True
-        }
-        success = handler.fetch_and_process_financial_data(access_token, conn=conn, cur=cur, item_info=item_info)
+        # Step 2: Schedule transaction fetch after a delay
+        def delayed_transaction_fetch():
+            try:
+                handler = FinancialDataHandler()
+                item_info = {
+                    'institution_id': institution_id,
+                    'is_new_account': True
+                }
+                handler.fetch_and_process_financial_data(access_token, item_info=item_info)
+            except Exception as e:
+                app.logger.error(f"Error in delayed transaction fetch: {str(e)}")
         
-        if success:
-            # Save access token to database
-            save_access_token(access_token, item_id, institution_id, institution_name)
-            
-            # Commit transaction only if everything succeeded
-            cur.execute("COMMIT")
-            return jsonify({'message': 'Account linked and initial data fetched successfully'}), 200
-        else:
-            raise Exception("Failed to process financial data")
-            
+        # Schedule the transaction fetch to run after 5 seconds
+        threading.Timer(5.0, delayed_transaction_fetch).start()
+        
+        return jsonify({'success': True})
     except Exception as e:
-        cur.execute("ROLLBACK")
         app.logger.error(f"Error in exchange_public_token: {str(e)}")
         return jsonify({'error': str(e)}), 500
-    finally:
-        cur.close()
-        conn.close()
 
 @app.route('/fetch_financial_data', methods=['POST'])
 def fetch_financial_data():
@@ -154,19 +152,25 @@ def fetch_financial_data():
         conn.close()
 
 @app.route('/remove_institution', methods=['POST'])
-def remove_institution():
+@app.route('/remove_institution/<institution_id>', methods=['POST'])
+def remove_institution(institution_id=None):
     try:
-        data = request.get_json()
-        institution_id = data.get('institution_id')
-        
+        if institution_id is None:
+            # Get institution_id from request body if not in URL
+            data = request.get_json()
+            institution_id = data.get('institution_id')
+            
         if not institution_id:
             return jsonify({'error': 'Institution ID is required'}), 400
-
+            
         conn = get_db_connection()
         cur = conn.cursor()
         
         try:
             cur.execute("BEGIN")
+            
+            # Delete cursor FIRST
+            cur.execute("DELETE FROM institution_cursors WHERE institution_id = %s", (institution_id,))
             
             # Get access token before deleting
             cur.execute("""
@@ -185,7 +189,7 @@ def remove_institution():
                 except Exception as e:
                     print(f"Error removing item from Plaid: {e}")
 
-            # Delete data in correct order
+            # Rest of the deletion logic remains the same
             cur.execute("""
                 WITH account_ids AS (
                     SELECT account_id FROM accounts WHERE institution_id = %s
@@ -512,6 +516,20 @@ def get_expense_chart_data():
     app.logger.info(f"Current Server Time: {datetime.now().isoformat()}")
     
     # ... rest of the existing code ...
+
+@app.route('/refresh_financial_data/<institution_id>', methods=['POST'])
+def refresh_financial_data(institution_id):
+    try:
+        access_token = get_access_token(institution_id)
+        handler = FinancialDataHandler()
+        item_info = {
+            'institution_id': institution_id,
+            'is_manual_refresh': True  # Add this flag
+        }
+        result = handler.fetch_and_process_financial_data(access_token, item_info=item_info)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
