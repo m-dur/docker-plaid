@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request, render_template, current_app
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from financial_data.utils.db_connection import get_db_connection
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import RealDictCursor, DictCursor
 import calendar
 from zoneinfo import ZoneInfo
 
@@ -794,53 +794,114 @@ def cashflow():
 @analytics_bp.route('/api/cashflow')
 def cashflow_summary():
     try:
-        # Get date parameters
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
+        start_date = datetime(2024, 7, 1)
+        end_date = datetime.fromisoformat(request.args.get('end_date').replace('Z', '+00:00'))
+        
+        current_app.logger.info(f"Using dates - Start: {start_date}, End: {end_date}")
         
         conn = get_db_connection()
         cur = conn.cursor()
         
         query = """
-        WITH monthly_flows AS (
+        WITH RECURSIVE date_series AS (
+            SELECT generate_series(
+                %s::timestamp,
+                %s::timestamp,
+                '1 month'
+            )::date as month
+        ),
+        monthly_flows AS (
             SELECT 
-                DATE_TRUNC('month', date) as month,
-                SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) as cash_in,
-                SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as cash_out
-            FROM stg_transactions
-            WHERE date >= %s::timestamp 
-            AND date <= %s::timestamp
-            AND LOWER(COALESCE(category, '')) NOT LIKE '%%transfer%%'
-            GROUP BY DATE_TRUNC('month', date)
-            ORDER BY month DESC
+                DATE_TRUNC('month', ds.month) as month,
+                COALESCE(SUM(CASE 
+                    WHEN t.amount < 0 
+                    AND LOWER(COALESCE(t.category, '')) NOT LIKE '%%transfer%%'
+                    THEN ABS(t.amount) 
+                    ELSE 0 
+                END), 0) as inflow,
+                COALESCE(SUM(CASE 
+                    WHEN t.amount > 0 
+                    AND t.name ILIKE '%%External Withdrawal%%'
+                    AND t.name not ilike '%%MONEYLINE%%'
+                    AND t.name not ilike '%%WF%%'
+                    THEN t.amount 
+                    ELSE 0 
+                END), 0) as outflow
+            FROM date_series ds
+            LEFT JOIN stg_transactions t ON 
+                DATE_TRUNC('month', t.date) = DATE_TRUNC('month', ds.month)
+            GROUP BY DATE_TRUNC('month', ds.month)
+            ORDER BY DATE_TRUNC('month', ds.month)
         )
         SELECT 
-            TO_CHAR(month, 'Mon YYYY') as month_label,
-            cash_in,
-            cash_out,
-            cash_in - cash_out as net_flow
+            to_char(month, 'Mon YYYY') as month_label,
+            ROUND(inflow::numeric, 2) as inflow,
+            ROUND(outflow::numeric, 2) as outflow,
+            ROUND((inflow - outflow)::numeric, 2) as net_flow
         FROM monthly_flows
         ORDER BY month;
         """
         
-        cur.execute(query, (start_date, end_date))
-        results = cur.fetchall()
-        
-        # Calculate totals
-        total_cash_in = sum(float(row[1]) for row in results)
-        total_cash_out = sum(float(row[2]) for row in results)
-        net_cash_flow = total_cash_in - total_cash_out
-        
-        return jsonify({
-            'total_cash_in': total_cash_in,
-            'total_cash_out': total_cash_out,
-            'net_cash_flow': net_cash_flow,
-            'months': [row[0] for row in results],
-            'cash_in': [float(row[1]) for row in results],
-            'cash_out': [float(row[2]) for row in results],
-            'net_flow': [float(row[3]) for row in results]
-        })
-        
+        try:
+            cur.execute(query, (start_date, end_date))
+            results = cur.fetchall()
+            current_app.logger.info(f"Retrieved {len(results)} rows")
+            
+            # Debug log the first few results
+            for i, row in enumerate(results[:3]):
+                current_app.logger.debug(f"Row {i}: {row}")
+            
+            if not results:
+                return jsonify({
+                    'total_cash_in': 0,
+                    'total_cash_out': 0,
+                    'net_cash_flow': 0,
+                    'months': [],
+                    'cash_in': [],
+                    'cash_out': [],
+                    'net_flow': []
+                })
+            
+            # Process results with explicit indices
+            months = []
+            cash_in = []
+            cash_out = []
+            net_flow = []
+            
+            for row in results:
+                try:
+                    months.append(str(row[0]))  # Month label
+                    cash_in.append(float(row[1]))  # Inflow
+                    cash_out.append(float(row[2]))  # Outflow
+                    net_flow.append(float(row[3]))  # Net flow
+                except Exception as e:
+                    current_app.logger.error(f"Error processing row {row}: {str(e)}")
+                    continue
+            
+            # Calculate totals
+            total_cash_in = sum(cash_in)
+            total_cash_out = sum(cash_out)
+            net_cash_flow = total_cash_in - total_cash_out
+            
+            response_data = {
+                'total_cash_in': total_cash_in,
+                'total_cash_out': total_cash_out,
+                'net_cash_flow': net_cash_flow,
+                'months': months,
+                'cash_in': cash_in,
+                'cash_out': cash_out,
+                'net_flow': net_flow
+            }
+            
+            current_app.logger.info("Response data prepared successfully")
+            return jsonify(response_data)
+            
+        except Exception as e:
+            current_app.logger.error(f"Query execution error: {str(e)}")
+            current_app.logger.error(f"Query being executed: {query}")
+            current_app.logger.error(f"Parameters: {(start_date, end_date)}")
+            raise
+            
     except Exception as e:
         current_app.logger.error(f"Error in cashflow_summary: {str(e)}")
         return jsonify({'error': str(e)}), 500

@@ -114,5 +114,30 @@ WHERE account_id IN (
 )
 AND name != 'Amazon Prime';
 
-select * from account_history;
 
+select *
+from transactions t
+left join accounts a
+on t.account_id = a.account_id
+where account_name ilike '%Blue%'
+;
+
+SELECT 
+    to_char(date, 'MM-YYYY') as transaction_date,
+    sum(amount) as amount 
+FROM transactions 
+WHERE name ILIKE '%External Withdrawal%'
+and name not ilike '%MONEYLINE%'
+and name not ilike '%WF%'
+GROUP BY 1 
+ORDER BY 1;
+
+select amount
+    , name
+    , category
+    , group_name
+from transactions
+where date >= '2024-07-01' and date <= '2024-07-31'
+and  name ILIKE '%External Withdrawal%'
+and name not ilike '%WF%'
+order by date

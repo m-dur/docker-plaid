@@ -128,11 +128,13 @@
                             type: 'bar',
                             marker: { color: '#28a745' },
                             text: data.cash_in.map(val => `$${Math.abs(val).toFixed(2)}`),
-                            textposition: 'inside',
-                            insidetextanchor: 'start',
-                            textangle: 0,
+                            textposition: 'outside',
+                            textanchor: 'middle',
+                            cliponaxis: false,
                             textfont: {
-                                size: 11
+                                size: 14,
+                                color: '#333',
+                                weight: 'bold'
                             },
                             hoverinfo: 'none'
                         };
@@ -145,10 +147,11 @@
                             marker: { color: '#dc3545' },
                             text: data.cash_out.map(val => `$${Math.abs(val).toFixed(2)}`),
                             textposition: 'inside',
-                            insidetextanchor: 'end',
-                            textangle: 0,
+                            insidetextanchor: 'middle',
                             textfont: {
-                                size: 11
+                                size: 14,
+                                color: 'white',
+                                weight: 'bold'
                             },
                             hoverinfo: 'none'
                         };
@@ -162,9 +165,12 @@
                             line: { color: '#0A85EA', width: 3 },
                             marker: { size: 8 },
                             text: data.net_flow.map(val => `$${val.toFixed(2)}`),
-                            textposition: 'top',
-                            textfont: { size: 12 },
-                            offsetgroup: 2,
+                            textposition: 'top center',
+                            textfont: { 
+                                size: 14,
+                                weight: 'bold'
+                            },
+                            textoffset: 15,
                             yaxis: 'y2',
                             hoverinfo: 'none'
                         };
@@ -172,7 +178,8 @@
                         const layout = {
                             title: {
                                 text: 'Monthly Cash Flow',
-                                font: { size: 24 }
+                                font: { size: 24 },
+                                y: 0.95
                             },
                             barmode: 'relative',
                             xaxis: { 
@@ -181,21 +188,31 @@
                             },
                             yaxis: { 
                                 title: 'Amount',
-                                tickformat: '$,.2f'
+                                tickformat: '$,.2f',
+                                range: [-8000, 10000],
+                                ticklen: 8,
+                                tickmode: 'linear',
+                                dtick: 2000
                             },
                             yaxis2: {
                                 overlaying: 'y',
                                 side: 'right',
                                 showgrid: false,
                                 zeroline: false,
-                                showticklabels: false
+                                tickformat: '$,.2f',
+                                range: [-8000, 10000],
+                                showticklabels: true,
+                                title: 'Net Flow',
+                                ticklen: 8,
+                                tickmode: 'linear',
+                                dtick: 2000
                             },
-                            height: 600,
+                            height: 700,
                             margin: {
                                 b: 100,
-                                t: 80,
-                                l: 80,
-                                r: 80
+                                t: 150,
+                                l: 100,
+                                r: 100
                             },
                             showlegend: true,
                             legend: {
