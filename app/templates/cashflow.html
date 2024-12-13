@@ -1,0 +1,221 @@
+<html>
+<head>
+    <link href='https://fonts.googleapis.com/css?family=Roboto' rel='stylesheet'>
+    <style>
+        body { 
+            background-color: #B1EEFC; 
+            font-family: 'Roboto', sans-serif; 
+        }
+        .container {
+            width: 95%;
+            margin: 20px auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .back-button {
+            background-color: #0A85EA;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .summary-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .summary-card h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+        .summary-value {
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+        .positive {
+            color: #28a745;
+        }
+        .negative {
+            color: #dc3545;
+        }
+        .neutral {
+            color: #0A85EA;
+        }
+        #monthly-chart {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            margin-bottom: 40px;
+            clear: both;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Cash Flow Analysis</h1>
+            <a href="/" class="back-button">Back to Home</a>
+        </div>
+
+        <div class="summary-cards">
+            <div class="summary-card">
+                <h3>Total Cash In</h3>
+                <div class="summary-value positive" id="total-cash-in">Loading...</div>
+            </div>
+            <div class="summary-card">
+                <h3>Total Cash Out</h3>
+                <div class="summary-value negative" id="total-cash-out">Loading...</div>
+            </div>
+            <div class="summary-card">
+                <h3>Net Cash Flow</h3>
+                <div class="summary-value" id="net-cash-flow">Loading...</div>
+            </div>
+        </div>
+
+        <div id="monthly-chart" style="width:100%; margin-bottom: 40px;"></div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            function formatCurrency(value) {
+                return '$' + Math.abs(value).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+            }
+
+            function updateDashboard() {
+                $.ajax({
+                    url: '/api/cashflow',
+                    method: 'GET',
+                    data: { 
+                        start_date: new Date('2024-07-01').toISOString(),
+                        end_date: new Date().toISOString()
+                    },
+                    success: function(data) {
+                        // Update summary cards
+                        $('#total-cash-in').text(formatCurrency(data.total_cash_in));
+                        $('#total-cash-out').text(formatCurrency(data.total_cash_out));
+                        
+                        const netFlow = data.net_cash_flow;
+                        $('#net-cash-flow')
+                            .text(formatCurrency(netFlow))
+                            .removeClass('positive negative neutral')
+                            .addClass(netFlow > 0 ? 'positive' : netFlow < 0 ? 'negative' : 'neutral');
+
+                        // Create chart
+                        const cashInTrace = {
+                            x: data.months,
+                            y: data.cash_in,
+                            name: 'Cash In',
+                            type: 'bar',
+                            marker: { color: '#28a745' },
+                            text: data.cash_in.map(val => `$${Math.abs(val).toFixed(2)}`),
+                            textposition: 'inside',
+                            insidetextanchor: 'start',
+                            textangle: 0,
+                            textfont: {
+                                size: 11
+                            },
+                            hoverinfo: 'none'
+                        };
+
+                        const cashOutTrace = {
+                            x: data.months,
+                            y: data.cash_out.map(val => -Math.abs(val)),
+                            name: 'Cash Out',
+                            type: 'bar',
+                            marker: { color: '#dc3545' },
+                            text: data.cash_out.map(val => `$${Math.abs(val).toFixed(2)}`),
+                            textposition: 'inside',
+                            insidetextanchor: 'end',
+                            textangle: 0,
+                            textfont: {
+                                size: 11
+                            },
+                            hoverinfo: 'none'
+                        };
+
+                        const netFlowTrace = {
+                            x: data.months,
+                            y: data.net_flow,
+                            name: 'Net Flow',
+                            type: 'scatter',
+                            mode: 'lines+markers+text',
+                            line: { color: '#0A85EA', width: 3 },
+                            marker: { size: 8 },
+                            text: data.net_flow.map(val => `$${val.toFixed(2)}`),
+                            textposition: 'top',
+                            textfont: { size: 12 },
+                            offsetgroup: 2,
+                            yaxis: 'y2',
+                            hoverinfo: 'none'
+                        };
+
+                        const layout = {
+                            title: {
+                                text: 'Monthly Cash Flow',
+                                font: { size: 24 }
+                            },
+                            barmode: 'relative',
+                            xaxis: { 
+                                title: 'Month',
+                                tickangle: -45
+                            },
+                            yaxis: { 
+                                title: 'Amount',
+                                tickformat: '$,.2f'
+                            },
+                            yaxis2: {
+                                overlaying: 'y',
+                                side: 'right',
+                                showgrid: false,
+                                zeroline: false,
+                                showticklabels: false
+                            },
+                            height: 600,
+                            margin: {
+                                b: 100,
+                                t: 80,
+                                l: 80,
+                                r: 80
+                            },
+                            showlegend: true,
+                            legend: {
+                                x: 0.5,
+                                y: 1.1,
+                                xanchor: 'center',
+                                orientation: 'h'
+                            },
+                            bargap: 0.15,
+                            bargroupgap: 0.1
+                        };
+
+                        Plotly.newPlot('monthly-chart', [cashInTrace, cashOutTrace, netFlowTrace], layout);
+                    }
+                });
+            }
+
+            // Initial dashboard update
+            updateDashboard();
+        });
+    </script>
+</body>
+</html>

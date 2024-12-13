@@ -787,6 +787,67 @@ def expenses_group_daily():
         cur.close()
         conn.close()
 
+@analytics_bp.route('/cashflow')
+def cashflow():
+    return render_template('cashflow.html')
+
+@analytics_bp.route('/api/cashflow')
+def cashflow_summary():
+    try:
+        # Get date parameters
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        query = """
+        WITH monthly_flows AS (
+            SELECT 
+                DATE_TRUNC('month', date) as month,
+                SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) as cash_in,
+                SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as cash_out
+            FROM stg_transactions
+            WHERE date >= %s::timestamp 
+            AND date <= %s::timestamp
+            AND LOWER(COALESCE(category, '')) NOT LIKE '%%transfer%%'
+            GROUP BY DATE_TRUNC('month', date)
+            ORDER BY month DESC
+        )
+        SELECT 
+            TO_CHAR(month, 'Mon YYYY') as month_label,
+            cash_in,
+            cash_out,
+            cash_in - cash_out as net_flow
+        FROM monthly_flows
+        ORDER BY month;
+        """
+        
+        cur.execute(query, (start_date, end_date))
+        results = cur.fetchall()
+        
+        # Calculate totals
+        total_cash_in = sum(float(row[1]) for row in results)
+        total_cash_out = sum(float(row[2]) for row in results)
+        net_cash_flow = total_cash_in - total_cash_out
+        
+        return jsonify({
+            'total_cash_in': total_cash_in,
+            'total_cash_out': total_cash_out,
+            'net_cash_flow': net_cash_flow,
+            'months': [row[0] for row in results],
+            'cash_in': [float(row[1]) for row in results],
+            'cash_out': [float(row[2]) for row in results],
+            'net_flow': [float(row[3]) for row in results]
+        })
+        
+    except Exception as e:
+        current_app.logger.error(f"Error in cashflow_summary: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
 # Add all other analytics routes from app.py
 # Including:
 # - /api/expenses/monthly
