@@ -139,7 +139,14 @@ class FinancialDataHandler:
             """, records)
             
             # 3. Process accounts and transactions first to get balances
+            liabilities_response = get_liabilities(access_token)
+            credit_cards = None
+            if liabilities_response and hasattr(liabilities_response, 'liabilities'):
+                credit_cards = liabilities_response.liabilities.credit
+                print(f"Debug - Found {len(credit_cards)} credit cards in liabilities data")
+
             accounts = get_accounts(access_token)
+            print(f"\nDebug - Accounts found: {len(accounts)}")
             
             # Get current accounts in database
             cur.execute("""
@@ -182,9 +189,6 @@ class FinancialDataHandler:
             
             # Get balances from transactions response
             bank_balances = transactions_response.accounts if hasattr(transactions_response, 'accounts') else []
-            
-            # Get additional account data
-            student_loans, credit_cards = get_liabilities(access_token)
             
             # Process accounts with balances from transactions sync
             accounts_dfs = process_accounts(accounts, bank_balances, credit_cards, {
@@ -248,18 +252,20 @@ class FinancialDataHandler:
                     """, (institution_id, current_pull_date))
                     
                     # Delete account-specific data from current pull cycle
-                    for table in ['depository_accounts', 'credit_accounts', 'loan_accounts', 'investment_accounts']:
-                        cur.execute(f"""
-                            DELETE FROM {table} 
-                            WHERE account_id IN (
-                                SELECT account_id FROM accounts 
-                                WHERE institution_id = %s AND pull_date = %s
-                            )
-                        """, (institution_id, current_pull_date))
+                    cur.execute("""
+                        DELETE FROM account_history 
+                        WHERE account_id IN (
+                            SELECT DISTINCT ON (account_id) account_id 
+                            FROM account_history
+                            WHERE institution_id = %s 
+                            ORDER BY account_id, pull_date DESC
+                        )
+                        AND pull_date = %s
+                    """, (institution_id, current_pull_date))
                     
                     # Delete accounts from current pull cycle
                     cur.execute("""
-                        DELETE FROM accounts 
+                        DELETE FROM account_history 
                         WHERE institution_id = %s AND pull_date = %s
                     """, (institution_id, current_pull_date))
                     
@@ -340,7 +346,7 @@ class FinancialDataHandler:
         try:
             conn = get_db_connection()
             cur = conn.cursor()
-            values = []  # Initialize values list
+            values = []
             
             # Get all existing category mappings
             cur.execute("SELECT transaction_name, category FROM category_mappings")
@@ -359,9 +365,18 @@ class FinancialDataHandler:
             
             # Process transactions with mapped categories
             for transaction in all_transactions:
-                # Check if we have a saved category for this transaction name
+                # Get initial category and group from mappings
                 saved_category = category_mappings.get(transaction.name)
                 saved_group = group_mappings.get(transaction.name)
+                
+                # Apply Amazon Store Card logic
+                if (hasattr(transaction, 'account_id') and 
+                    (transaction.account_id == '13J3y079ewiVvXdkA68oikaaZB81zyha6KOwn' or
+                     getattr(transaction, 'account_name', '') == 'Prime Store Card')):
+                    # Only override if it's not "Amazon Prime"
+                    if transaction.name != "Amazon Prime":
+                        saved_category = "Shopping"
+                        saved_group = "Misc"
                 
                 values.append((
                     transaction.transaction_id,
@@ -369,15 +384,15 @@ class FinancialDataHandler:
                     transaction.amount,
                     transaction.date,
                     transaction.name,
-                    saved_category,  # Use saved category from mappings
+                    saved_category,  # Now includes Amazon Store Card logic
                     transaction.merchant_name,
-                    saved_group,    # Use saved group from mappings
+                    saved_group,    # Now includes Amazon Store Card logic
                     transaction.payment_channel,
                     transaction.authorized_datetime,
                     datetime.now().date()
                 ))
             
-            if values:  # Only try to save if we have transactions
+            if values:
                 execute_values(cur, """
                     INSERT INTO transactions (
                         transaction_id, account_id, amount, date, name,
@@ -393,6 +408,15 @@ class FinancialDataHandler:
                         authorized_datetime = EXCLUDED.authorized_datetime,
                         pull_date = EXCLUDED.pull_date
                 """, values)
+                
+                # Update any existing Amazon Store Card transactions
+                cur.execute("""
+                    UPDATE transactions 
+                    SET category = 'Shopping',
+                        group_name = 'Misc'
+                    WHERE account_id = '13J3y079ewiVvXdkA68oikaaZB81zyha6KOwn'
+                    AND name != 'Amazon Prime'
+                """)
                 
             conn.commit()
             return True

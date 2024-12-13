@@ -271,7 +271,7 @@ def create_and_store_link_token():
                 client_user_id=str(time.time())
             ),
             transactions={
-                "days_requested": 180  # Request 6 months of history
+                "days_requested": 360  # Request 12 months of history
             }
         )
         response = client.link_token_create(request)
@@ -320,54 +320,18 @@ def get_bank_balances(access_token):
 
 @track_plaid_call(product='liabilities', operation='get')
 def get_liabilities(access_token):
+    client = create_plaid_client()
     try:
-        client = create_plaid_client()
-        accounts = get_accounts(access_token)
-        
-        credit_accounts = [
-            account.account_id
-            for account in accounts
-            if account.type == 'credit' or 
-            (account.subtype and str(account.subtype).lower().find('credit') != -1)
-        ]
-        student_accounts = [
-            account.account_id
-            for account in accounts
-            if account.subtype and str(account.subtype).lower().find('student') != -1
-        ]
-        
-        account_ids = credit_accounts + student_accounts
-        
-        if not account_ids:
-            print("No credit card or student loan accounts found.")
-            return [], []
-            
+        print("\nDebug - Fetching liabilities data...")
         request = LiabilitiesGetRequest(
-            access_token=access_token,
-            options=LiabilitiesGetRequestOptions(
-                account_ids=account_ids
-            )
+            access_token=access_token
         )
-        
-        try:
-            response = client.liabilities_get(request)
-        except plaid.ApiException as e:
-            print(f"Plaid API error getting liabilities: {e.body}")
-            return [], []
-            
-        liabilities = response.get('liabilities', {})
-        student_loans = liabilities.get('student', [])
-        credit_cards = liabilities.get('credit', [])
-        
-        return student_loans, credit_cards
-        
-    except plaid.ApiException as e:
-        error_response = json.loads(e.body)
-        print(f"Plaid API error: {error_response.get('error_code')} - {error_response.get('error_message')}")
-        return [], []
+        response = client.liabilities_get(request)
+        print(f"Debug - Liabilities response: {response.to_dict()}")
+        return response
     except Exception as e:
-        print(f"\nError in get_liabilities: {str(e)}")
-        raise
+        print(f"Plaid API error getting liabilities: {e}")
+        return None
 
 @track_plaid_call(product='investments', operation='get_holdings')
 def get_investments(access_token):

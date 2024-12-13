@@ -30,11 +30,10 @@ CREATE TABLE institutions (
     last_refresh TIMESTAMP
 );
 
--- Accounts
-
-
-CREATE TABLE accounts (
-    account_id VARCHAR(255) PRIMARY KEY,
+-- Account history
+CREATE TABLE account_history (
+    history_id SERIAL PRIMARY KEY,
+    account_id VARCHAR(255),
     account_name VARCHAR(255),
     institution_id VARCHAR(255) REFERENCES institutions(id),
     type VARCHAR(50),
@@ -42,31 +41,6 @@ CREATE TABLE accounts (
     mask VARCHAR(20),
     verification_status VARCHAR(50),
     currency VARCHAR(3),
-    last_updated_datetime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    pull_date DATE DEFAULT CURRENT_DATE
-);
-
--- loan accounts
-CREATE TABLE loan_accounts (
-    account_id VARCHAR(255) PRIMARY KEY REFERENCES accounts(account_id),
-    balance_current DECIMAL(12,2),
-    original_loan_amount DECIMAL(12,2),
-    interest_rate DECIMAL(6,3),
-    pull_date DATE DEFAULT CURRENT_DATE
-);
-
-
--- Depository Accounts 
-CREATE TABLE depository_accounts (
-    account_id VARCHAR(255) PRIMARY KEY REFERENCES accounts(account_id),
-    balance_current DECIMAL(12,2),
-    balance_available DECIMAL(12,2),
-    pull_date DATE DEFAULT CURRENT_DATE
-);
-
--- Credit Accounts
-CREATE TABLE credit_accounts (
-    account_id VARCHAR(255) PRIMARY KEY REFERENCES accounts(account_id),
     balance_current DECIMAL(12,2),
     balance_available DECIMAL(12,2),
     balance_limit DECIMAL(12,2),
@@ -78,9 +52,78 @@ CREATE TABLE credit_accounts (
     apr_type VARCHAR(50),
     balance_subject_to_apr DECIMAL(12,2),
     interest_charge_amount DECIMAL(12,2),
-    pull_date DATE DEFAULT CURRENT_DATE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    pull_date DATE DEFAULT CURRENT_DATE
 );
+
+-- Current accounts view
+CREATE OR REPLACE VIEW accounts AS
+SELECT DISTINCT ON (account_id)
+    account_id,
+    account_name,
+    institution_id,
+    type,
+    subtype,
+    mask,
+    verification_status,
+    currency,
+    pull_date
+FROM account_history
+ORDER BY account_id, pull_date DESC;
+
+-- Current depository accounts view
+CREATE OR REPLACE VIEW depository_accounts AS
+SELECT DISTINCT ON (account_id)
+    account_id,
+    balance_current,
+    balance_available,
+    pull_date
+FROM account_history
+WHERE type = 'depository'
+ORDER BY account_id, pull_date DESC;
+
+-- Current credit accounts view
+
+CREATE OR REPLACE VIEW credit_accounts AS 
+SELECT DISTINCT ON (account_id)
+    account_id,
+    balance_current,
+    balance_available,
+    balance_limit,
+    last_statement_balance,
+    last_statement_date,
+    minimum_payment_amount,
+    next_payment_due_date,
+    apr_percentage,
+    apr_type,
+    balance_subject_to_apr,
+    interest_charge_amount,
+    pull_date,
+    created_at
+FROM account_history
+WHERE type = 'credit'
+    AND created_at = (
+        SELECT MAX(created_at) 
+        FROM account_history 
+        WHERE type = 'credit'
+    )
+ORDER BY account_id, created_at DESC;
+
+
+
+
+
+-- loan accounts
+CREATE TABLE loan_accounts (
+    account_id VARCHAR(255) PRIMARY KEY REFERENCES accounts(account_id),
+    balance_current DECIMAL(12,2),
+    original_loan_amount DECIMAL(12,2),
+    interest_rate DECIMAL(6,3),
+    pull_date DATE DEFAULT CURRENT_DATE
+);
+
+
+
 
 -- Investment Accounts
 CREATE TABLE investment_accounts (
@@ -120,6 +163,24 @@ CREATE TABLE transactions (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     pull_date DATE DEFAULT CURRENT_DATE
 );
+
+CREATE OR REPLACE VIEW stg_transactions AS
+SELECT 
+    transaction_id,
+    account_id,
+    amount,
+    date,
+    name,
+    merchant_name,
+    category,
+    group_name,
+    payment_channel,
+    authorized_datetime,
+    pull_date
+FROM transactions 
+WHERE pending = FALSE 
+AND (pending_transaction_id IS NULL OR pending_transaction_id = '');
+
 
 -- institution cursor
 CREATE TABLE institution_cursors (

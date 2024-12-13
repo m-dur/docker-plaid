@@ -15,7 +15,6 @@ def update_transaction_category():
         new_category = request.json.get('category')
         update_all = request.json.get('update_all', False)
         transaction_name = request.json.get('transaction_name')
-        
         conn = get_db_connection()
         cur = conn.cursor()
         

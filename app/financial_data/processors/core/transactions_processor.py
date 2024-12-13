@@ -27,6 +27,15 @@ def process_transactions(transactions_data):
                 mapped_category = category_mappings.get(transaction_name)
                 mapped_group = group_mappings.get(transaction_name)
                 
+                # Check for Prime Store Card classification
+                if (hasattr(transaction, 'account_id') and 
+                    (transaction.account_id == '13J3y079ewiVvXdkA68oikaaZB81zyha6KOwn' or
+                     getattr(transaction, 'account_name', '') == 'Prime Store Card')):
+                    # Only override if it's not "Amazon Prime"
+                    if transaction_name != "Amazon Prime":
+                        mapped_category = "Shopping"
+                        mapped_group = "Misc"
+                
                 transaction_record = {
                     'transaction_id': str(transaction.transaction_id),
                     'account_id': str(transaction.account_id),

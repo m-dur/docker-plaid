@@ -62,7 +62,7 @@ def expenses_summary():
                 t.category,
                 t.amount,
                 t.date
-            FROM transactions t
+            FROM stg_transactions t
             {base_conditions}
         ),
         category_totals AS (
@@ -149,7 +149,7 @@ def expenses_monthly():
                     '1 month'
                 ) as date
             ) d
-            LEFT JOIN transactions t ON 
+            LEFT JOIN stg_transactions t ON 
                 DATE_TRUNC('month', t.date) = d.date
                 AND t.amount > 0
                 AND category = %s
@@ -169,7 +169,7 @@ def expenses_monthly():
                     '1 month'
                 ) as date
             ) d
-            LEFT JOIN transactions t ON 
+            LEFT JOIN stg_transactions t ON 
                 DATE_TRUNC('month', t.date) = d.date
                 AND t.amount > 0
                 AND LOWER(COALESCE(t.category, '')) NOT LIKE '%%transfer%%'
@@ -236,7 +236,7 @@ def expenses_group_summary():
                 t.group_name,
                 t.amount,
                 t.date
-            FROM transactions t
+            FROM stg_transactions t
             {base_conditions}
         ),
         group_totals AS (
@@ -322,7 +322,7 @@ def expenses_group_monthly():
                     '1 month'
                 ) as date
             ) d
-            LEFT JOIN transactions t ON 
+            LEFT JOIN stg_transactions t ON 
                 DATE_TRUNC('month', t.date) = d.date
                 AND t.amount > 0
                 AND group_name = %s
@@ -342,7 +342,7 @@ def expenses_group_monthly():
                     '1 month'
                 ) as date
             ) d
-            LEFT JOIN transactions t ON 
+            LEFT JOIN stg_transactions t ON 
                 DATE_TRUNC('month', t.date) = d.date
                 AND t.amount > 0
                 AND LOWER(COALESCE(group_name, '')) NOT LIKE '%%transfer%%'
@@ -409,7 +409,7 @@ def income_summary():
                 t.category,
                 ABS(t.amount) as amount,
                 t.date
-            FROM transactions t
+            FROM stg_transactions t
             {base_conditions}
         ),
         category_totals AS (
@@ -489,7 +489,7 @@ def income_monthly():
                     '1 month'
                 ) as date
             ) d
-            LEFT JOIN transactions t ON 
+            LEFT JOIN stg_transactions t ON 
                 DATE_TRUNC('month', t.date) = d.date
                 AND t.amount < 0
                 AND category = %s
@@ -509,7 +509,7 @@ def income_monthly():
                     '1 month'
                 ) as date
             ) d
-            LEFT JOIN transactions t ON 
+            LEFT JOIN stg_transactions t ON 
                 DATE_TRUNC('month', t.date) = d.date
                 AND t.amount < 0
                 AND LOWER(COALESCE(category, '')) NOT LIKE '%%transfer%%'
@@ -560,7 +560,7 @@ def net_income_monthly():
                     '1 month'
                 ) as date
             ) d
-            LEFT JOIN transactions t ON 
+            LEFT JOIN stg_transactions t ON 
                 DATE_TRUNC('month', t.date) = d.date
                 AND LOWER(COALESCE(t.category, '')) NOT LIKE '%%transfer%%'
             GROUP BY DATE_TRUNC('month', d.date)
@@ -638,7 +638,7 @@ def expenses_daily():
             SELECT 
                 EXTRACT(DAY FROM (date AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date) as day_of_month,
                 COALESCE(SUM(amount), 0) as daily_amount
-            FROM transactions 
+            FROM stg_transactions 
             WHERE date >= %s::timestamptz 
             AND date < %s::timestamptz + INTERVAL '1 day'
             AND amount > 0
@@ -731,7 +731,7 @@ def expenses_group_daily():
             SELECT 
                 EXTRACT(DAY FROM (date AT TIME ZONE 'UTC' AT TIME ZONE 'America/Los_Angeles')::date) as day_of_month,
                 COALESCE(SUM(amount), 0) as daily_amount
-            FROM transactions 
+            FROM stg_transactions 
             WHERE date >= %s::timestamptz 
             AND date < %s::timestamptz + INTERVAL '1 day'
             AND amount > 0

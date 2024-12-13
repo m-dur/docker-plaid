@@ -77,38 +77,42 @@ group by 1,2
 ORDER BY 1
 )
 
-select * 
-    , sum(daily_sum) over (partition by group_name order by date rows between 2 preceding and current row) as moving_avg_3d
-    , SUM(daily_sum) OVER (
-        PARTITION BY group_name, DATE_TRUNC('month', date)  -- or EXTRACT(month FROM date)
-) as month_sum,
-row_number() over (partition by group_name, date order by daily_sum) as daily_rank
-from daily_sum;
+with base as (
+    select *
+from stg_transactions t
+left join accounts a 
+on t.account_id = a.account_id
+) select date
+    ,account_name
+    , name
+    , amount
+    , count(*)
+from base
+group by 1,2,3,4
+having count(*) >1;
 
-WITH daily_sum AS (
-    SELECT 
-        date,
-        group_name,
-        SUM(amount) as daily_sum
-    FROM transactions
-    LEFT JOIN categories
-        ON categories.id = transactions.category_type_id
-    WHERE group_name IN ('digital purchase', 'travel')
-    GROUP BY 1,2
-),
-ranked_transactions AS (
-    SELECT 
-        date,
-        group_name,
-        daily_sum,
-        DATE_TRUNC('month', date) as month,
-        ROW_NUMBER() OVER (
-            PARTITION BY group_name, DATE_TRUNC('month', date)
-            ORDER BY daily_sum DESC
-        ) as rank
-    FROM daily_sum
+with base as (select * FROM transactions t
+left join accounts a 
+on t.account_id = a.account_id
 )
-SELECT *
-FROM ranked_transactions
-WHERE rank < 3
-ORDER BY month, group_name, rank;
+select account_name,
+    amount,
+    category 
+    , pending_transaction_id
+    , pending
+from base;
+
+
+-- updating amazon prime store card transactions
+UPDATE transactions 
+SET category = 'Shopping',
+    group_name = 'Misc'
+WHERE account_id IN (
+    SELECT account_id 
+    FROM accounts 
+    WHERE account_name = 'Prime Store Card'
+)
+AND name != 'Amazon Prime';
+
+select * from account_history;
+

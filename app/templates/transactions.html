@@ -146,7 +146,7 @@
         <div class="filter-options">
             <label>
                 <input type="checkbox" id="filter-empty">
-                Show only transactions with empty category or group
+                Show only non-zero transactions with empty category or group
             </label>
         </div>
         
@@ -417,18 +417,23 @@
                                     // Get the text content from the category and group cells
                                     const categoryCell = $(table.cell(dataIndex, 3).node());
                                     const groupCell = $(table.cell(dataIndex, 4).node());
+                                    const amountCell = $(table.cell(dataIndex, 5).node());
                                     
                                     // Get the actual text content, trimming whitespace
                                     const categoryText = categoryCell.find('.category-text').text().trim();
                                     const groupText = groupCell.find('.group-text').text().trim();
                                     
-                                    // Show row if either category or group is empty (N/A or NULL)
-                                    return categoryText === 'N/A' || 
-                                           groupText === 'N/A' || 
-                                           categoryText === 'NULL' || 
-                                           groupText === 'NULL' ||
-                                           !categoryText || 
-                                           !groupText;
+                                    // Get amount and convert it to a number (removing $ and any commas)
+                                    const amountText = amountCell.text().replace(/[$,]/g, '');
+                                    const amount = parseFloat(amountText);
+                                    
+                                    // Show row if:
+                                    // 1. Amount is non-zero AND
+                                    // 2. Either category OR group is specifically 'N/A'
+                                    return Math.abs(amount) != 0.00 && (
+                                        categoryText === 'N/A' || 
+                                        groupText === 'N/A'
+                                    );
                                 }
                             );
                         } else {
