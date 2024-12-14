@@ -41,6 +41,7 @@
         table.dataTable {
             width: 100% !important;
             margin: 0 !important;
+            table-layout: fixed;
         }
         table.dataTable th, 
         table.dataTable td {
@@ -133,6 +134,33 @@
 
         .top {
             margin-bottom: 20px;
+        }
+
+        table.dataTable thead th:nth-child(1) { width: 50px; }
+        table.dataTable thead th:nth-child(2) { width: 100px; }
+        table.dataTable thead th:nth-child(3) { width: 150px; }
+        table.dataTable thead th:nth-child(4) { width: 120px; }
+        table.dataTable thead th:nth-child(5) { width: 120px; }
+        table.dataTable thead th:nth-child(6) { width: 250px; }
+        table.dataTable thead th:nth-child(7) { width: 100px; }
+
+        table.dataTable td:nth-child(6) {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        table.dataTable td:not(:nth-child(6)) {
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        table.dataTable td:nth-child(6):hover {
+            overflow: visible;
+            white-space: normal;
+            position: relative;
+            background-color: white;
+            z-index: 1;
         }
     </style>
 </head>
@@ -389,7 +417,12 @@
                         order: [[1, 'desc']],
                         stateSave: true,
                         select: true,
-                        info: false
+                        info: false,
+                        autoWidth: false,
+                        columnDefs: [{
+                            targets: 5,
+                            width: "250px"
+                        }]
                     });
 
                     // Prevent sorting when clicking on filter inputs

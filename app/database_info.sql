@@ -85,11 +85,24 @@ ORDER BY account_id, pull_date DESC;
 -- Current credit accounts view
 
 CREATE OR REPLACE VIEW credit_accounts AS 
-SELECT DISTINCT ON (account_id)
+with base as (
+  SELECT
     account_id,
     balance_current,
     balance_available,
-    balance_limit,
+    COALESCE(
+      balance_limit,
+      (
+        SELECT balance_limit 
+        FROM account_history ah2 
+        WHERE ah2.account_id = account_history.account_id 
+          AND ah2.balance_limit IS NOT NULL
+          AND ah2.created_at <= account_history.created_at
+          AND type = 'credit'
+        ORDER BY created_at DESC 
+        LIMIT 1
+      )
+    ) as balance_limit,
     last_statement_balance,
     last_statement_date,
     minimum_payment_amount,
@@ -99,15 +112,15 @@ SELECT DISTINCT ON (account_id)
     balance_subject_to_apr,
     interest_charge_amount,
     pull_date,
-    created_at
-FROM account_history
-WHERE type = 'credit'
-    AND created_at = (
-        SELECT MAX(created_at) 
-        FROM account_history 
-        WHERE type = 'credit'
-    )
-ORDER BY account_id, created_at DESC;
+    created_at,
+    row_number() over (partition by account_id order by created_at desc) as row_num
+  FROM account_history
+  WHERE type = 'credit' 
+  ORDER BY account_id, created_at DESC
+)
+select * 
+from base 
+where row_num = 1;
 
 
 

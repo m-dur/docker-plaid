@@ -821,7 +821,7 @@ def cashflow_summary():
                 END), 0) as inflow,
                 COALESCE(SUM(CASE 
                     WHEN t.amount > 0 
-                    AND t.name ILIKE '%%External Withdrawal%%'
+                    AND (t.name ILIKE '%%External Withdrawal%%' or t.name ILIKE '%%Check%%')
                     AND t.name not ilike '%%MONEYLINE%%'
                     AND t.name not ilike '%%WF%%'
                     THEN t.amount 
