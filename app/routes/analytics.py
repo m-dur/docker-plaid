@@ -909,6 +909,49 @@ def cashflow_summary():
         cur.close()
         conn.close()
 
+@analytics_bp.route('/balances')
+def balances():
+    return render_template('balances.html')
+
+@analytics_bp.route('/api/balances')
+def get_balances():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        query = """
+        WITH base AS (
+            SELECT
+                account_name,
+                balance_current as bal_cur,
+                balance_limit as bal_limit
+            FROM credit_accounts
+        )
+        SELECT *,
+            ROUND((bal_cur / NULLIF(bal_limit, 0) * 100)::numeric, 2) as util_rate
+        FROM base
+        UNION ALL
+        SELECT 
+            'Total' as account_name,
+            SUM(bal_cur) as bal_cur,
+            SUM(bal_limit) as bal_limit,
+            ROUND((SUM(bal_cur) / NULLIF(SUM(bal_limit), 0) * 100)::numeric, 2) as util_rate
+        FROM base
+        ORDER BY util_rate DESC;
+        """
+        
+        cur.execute(query)
+        results = cur.fetchall()
+        
+        return jsonify([dict(row) for row in results])
+        
+    except Exception as e:
+        current_app.logger.error(f"Error in get_balances: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
 # Add all other analytics routes from app.py
 # Including:
 # - /api/expenses/monthly

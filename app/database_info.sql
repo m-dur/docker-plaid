@@ -83,11 +83,12 @@ WHERE type = 'depository'
 ORDER BY account_id, pull_date DESC;
 
 -- Current credit accounts view
-
+--drop view credit_accounts;
 CREATE OR REPLACE VIEW credit_accounts AS 
 with base as (
   SELECT
     account_id,
+    account_name,
     balance_current,
     balance_available,
     COALESCE(

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link href='https://fonts.googleapis.com/css?family=Roboto' rel='stylesheet'>
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: white;
+            margin: 0;
+            padding: 20px;
+        }
+        .total-container {
+            max-width: 1200px;
+            margin: 0 auto 40px auto;
+            padding: 20px;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+        }
+        .total-card {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+        }
+        .card h2, .total-card h2 {
+            margin: 0 0 10px 0;
+            color: #000;
+            font-size: 24px;
+            font-weight: normal;
+        }
+        .total-card h2 {
+            font-size: 28px;
+            margin-bottom: 15px;
+        }
+        .progress-ring {
+            position: relative;
+            width: 200px;
+            height: 200px;
+            margin: 0 auto 15px;
+        }
+        .total-progress-ring {
+            position: relative;
+            width: 250px;
+            height: 250px;
+            margin: 0 auto 20px;
+        }
+        .progress-ring circle, .total-progress-ring circle {
+            fill: none;
+            stroke-width: 12;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+        }
+        .progress-ring .background, .total-progress-ring .background {
+            stroke: #f0f0f0;
+        }
+        .progress-ring .progress, .total-progress-ring .progress {
+            stroke: #4CAF50;
+            stroke-linecap: round;
+        }
+        .utilization {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 32px;
+            font-weight: bold;
+            color: #000;
+        }
+        .total-utilization {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 36px;
+            font-weight: bold;
+            color: #000;
+        }
+        .balance-info {
+            color: #666;
+            font-size: 16px;
+            margin-top: 5px;
+        }
+        .total-balance-info {
+            color: #666;
+            font-size: 20px;
+        }
+        .home-link {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            padding: 10px 20px;
+            background: #0A85EA;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <a href="/" class="home-link">Home</a>
+    <div class="total-container" id="total-container"></div>
+    <div class="container" id="cards-container"></div>
+
+    <script>
+        function createProgressRing(utilization, isTotal = false) {
+            const radius = isTotal ? 90 : 80;
+            const size = isTotal ? 250 : 200;
+            const circumference = 2 * Math.PI * radius;
+            const offset = ((100 - utilization) / 100) * circumference;
+            const utilizationClass = isTotal ? 'total-utilization' : 'utilization';
+            
+            return `
+                <div class="${isTotal ? 'total-progress-ring' : 'progress-ring'}">
+                    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+                        <circle class="background" cx="${size/2}" cy="${size/2}" r="${radius}" />
+                        <circle class="progress" cx="${size/2}" cy="${size/2}" r="${radius}"
+                            style="stroke-dasharray: ${circumference}; stroke-dashoffset: ${offset};" />
+                    </svg>
+                    <div class="${utilizationClass}">${utilization}%</div>
+                </div>
+            `;
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(amount);
+        }
+
+        fetch('/api/balances')
+            .then(response => response.json())
+            .then(data => {
+                const container = document.getElementById('cards-container');
+                const totalContainer = document.getElementById('total-container');
+                
+                data.forEach(account => {
+                    if (account.account_name === 'Total') {
+                        const totalCard = document.createElement('div');
+                        totalCard.className = 'total-card';
+                        totalCard.innerHTML = `
+                            <h2>Total Credit Utilization</h2>
+                            ${createProgressRing(account.util_rate, true)}
+                            <div class="total-balance-info">
+                                ${formatCurrency(account.bal_cur)} / ${formatCurrency(account.bal_limit)}
+                            </div>
+                        `;
+                        totalContainer.appendChild(totalCard);
+                    } else {
+                        const card = document.createElement('div');
+                        card.className = 'card';
+                        card.innerHTML = `
+                            <h2>${account.account_name}</h2>
+                            ${createProgressRing(account.util_rate)}
+                            <div class="balance-info">
+                                ${formatCurrency(account.bal_cur)} / ${formatCurrency(account.bal_limit)}
+                            </div>
+                        `;
+                        container.appendChild(card);
+                    }
+                });
+            });
+    </script>
+</body>
+</html> 
