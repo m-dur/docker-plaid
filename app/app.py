@@ -485,20 +485,50 @@ def get_database_statistics():
     cur = conn.cursor()
     
     try:
-        # Query to get all tables and their row counts from the public schema
+        # First get all tables and views
         cur.execute("""
             SELECT 
-                relname as table_name,
-                n_live_tup as row_count
-            FROM pg_stat_user_tables
-            WHERE schemaname = 'public'
-            ORDER BY n_live_tup DESC;
+                n.nspname as schemaname,
+                c.relname as relation_name,
+                c.relkind as relation_type
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+            AND c.relkind IN ('r', 'v')  -- 'r' for tables, 'v' for views
         """)
         
         results = cur.fetchall()
-        stats = {table_name: row_count for table_name, row_count in results}
+        stats = {}
+        
+        for schema, name, rel_type in results:
+            if rel_type == 'r':  # Table
+                # Use pg_stat_get_live_tuples for tables
+                cur.execute(f"""
+                    SELECT pg_stat_get_live_tuples(c.oid)
+                    FROM pg_class c
+                    JOIN pg_namespace n ON n.oid = c.relnamespace
+                    WHERE n.nspname = 'public' AND c.relname = %s
+                """, (name,))
+                count = cur.fetchone()[0]
+            else:  # View
+                # Use COUNT(*) for views
+                try:
+                    cur.execute(f"SELECT COUNT(*) FROM {name}")
+                    count = cur.fetchone()[0]
+                except Exception as e:
+                    print(f"Error counting view {name}: {e}")
+                    count = 0
+            
+            # Create more user-friendly display name
+            display_name = name
+            if rel_type == 'v':
+                display_name += ' (view)'
                 
-        return jsonify(stats)
+            stats[display_name] = count
+        
+        # Sort by count in descending order
+        sorted_stats = dict(sorted(stats.items(), key=lambda x: x[1], reverse=True))
+        return jsonify(sorted_stats)
         
     except Exception as e:
         print(f"Error getting database statistics: {str(e)}")

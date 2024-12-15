@@ -18,32 +18,11 @@ skinparam class {
     HeaderBackgroundColor<<core>> #4B0082
     HeaderBackgroundColor<<transaction>> #0066CC
     HeaderBackgroundColor<<reference>> #006633
+    HeaderBackgroundColor<<history>> #CC6600
 }
 
 ' Core tables
-class accounts <<core>> {
-    + account_id: varchar <<PK>>
-    account_name: varchar
-    last_updated_datetime: timestamp
-    account_type_id: integer <<FK>>
-    institution_id: varchar <<FK>>
-    mask: varchar(20)
-    verification_status: varchar(50)
-    currency: varchar(3)
-    created_at: timestamp
-    pull_date: date
-}
-
-' Reference tables
-class account_types <<reference>> {
-    + id: serial <<PK>>
-    account_type: varchar(50)
-    subtype: varchar(50)
-    status: varchar(20)
-    created_at: timestamp
-}
-
-class institutions <<reference>> {
+class institutions <<core>> {
     + id: varchar <<PK>>
     name: varchar
     url: varchar
@@ -54,48 +33,56 @@ class institutions <<reference>> {
     billed_products: text
     created_at: timestamp
     last_refresh: timestamp
-    last_credit_pull: timestamp
-    connected_on: timestamp
 }
 
-class category_mappings <<reference>> {
-    + transaction_name: varchar <<PK>>
-    category: varchar
-    group_name: varchar
-    last_updated: timestamp
-}
-
-class group_mappings <<reference>> {
-    + group_name: varchar <<PK>>
-    description: varchar
-    created_at: timestamp
-}
-
-' Transaction tables
-class transactions <<transaction>> {
-    + transaction_id: varchar <<PK>>
-    account_id: varchar <<FK>>
-    amount: decimal(12,2)
-    date: date
-    name: varchar
-    category: varchar
-    group_name: varchar
-    merchant_name: varchar
-    payment_channel: varchar(50)
-    authorized_datetime: timestamp
+class account_history <<history>> {
+    + history_id: serial <<PK>>
+    account_id: varchar
+    account_name: varchar
+    institution_id: varchar <<FK>>
+    type: varchar(50)
+    subtype: varchar(50)
+    mask: varchar(20)
+    verification_status: varchar(50)
+    currency: varchar(3)
+    balance_current: decimal(12,2)
+    balance_available: decimal(12,2)
+    balance_limit: decimal(12,2)
+    last_statement_balance: decimal(12,2)
+    last_statement_date: date
+    minimum_payment_amount: decimal(12,2)
+    next_payment_due_date: date
+    apr_percentage: decimal(5,2)
+    apr_type: varchar(50)
+    balance_subject_to_apr: decimal(12,2)
+    interest_charge_amount: decimal(12,2)
     created_at: timestamp
     pull_date: date
 }
 
-class depository_accounts <<transaction>> {
-    + account_id: varchar <<PK,FK>>
+' Views
+class accounts <<view>> {
+    account_id: varchar
+    account_name: varchar
+    institution_id: varchar
+    type: varchar
+    subtype: varchar
+    mask: varchar
+    verification_status: varchar
+    currency: varchar
+    pull_date: date
+}
+
+class depository_accounts <<view>> {
+    account_id: varchar
     balance_current: decimal(12,2)
     balance_available: decimal(12,2)
     pull_date: date
 }
 
-class credit_accounts <<transaction>> {
-    + account_id: varchar <<PK,FK>>
+class credit_accounts <<view>> {
+    account_id: varchar
+    account_name: varchar
     balance_current: decimal(12,2)
     balance_available: decimal(12,2)
     balance_limit: decimal(12,2)
@@ -111,27 +98,91 @@ class credit_accounts <<transaction>> {
     created_at: timestamp
 }
 
-class investment_accounts <<transaction>> {
-    + account_id: varchar <<PK,FK>>
+class investment_accounts <<view>> {
+    account_id: varchar
     balance_current: decimal(12,2)
     pull_date: date
 }
 
-class loan_accounts <<transaction>> {
-    + account_id: varchar <<PK,FK>>
+class loan_accounts <<view>> {
+    account_id: varchar
     balance_current: decimal(12,2)
     original_loan_amount: decimal(12,2)
     interest_rate: decimal(6,3)
     pull_date: date
 }
 
+' Reference tables
+class category_mappings <<reference>> {
+    + transaction_name: varchar <<PK>>
+    category: varchar
+    last_updated: timestamp
+}
+
+class group_mappings <<reference>> {
+    + transaction_name: varchar <<PK>>
+    group_name: varchar
+    last_updated: timestamp
+}
+
+' Transaction and API tables
+class transactions <<transaction>> {
+    + transaction_id: varchar <<PK>>
+    account_id: varchar <<FK>>
+    amount: decimal(12,2)
+    date: date
+    name: varchar
+    category: varchar
+    group_name: varchar
+    merchant_name: varchar
+    payment_channel: varchar(50)
+    authorized_datetime: timestamp
+    created_at: timestamp
+    pull_date: date
+}
+
+class institution_cursors <<transaction>> {
+    + cursor_id: serial <<PK>>
+    institution_id: varchar <<FK>>
+    cursor: text
+    first_sync_at: timestamp
+    last_sync_at: timestamp
+    sync_status: varchar(50)
+}
+
+class access_tokens <<transaction>> {
+    + token_id: serial <<PK>>
+    institution_id: varchar <<FK>>
+    access_token: text
+    item_id: varchar
+    created_at: timestamp
+    last_updated: timestamp
+}
+
+class api_calls <<transaction>> {
+    + id: serial <<PK>>
+    endpoint: varchar
+    method: varchar(10)
+    is_plaid: boolean
+    called_at: timestamp
+    caller_type: varchar(50)
+    caller_id: varchar(100)
+    response_time: float
+    status_code: integer
+    error: text
+    request_payload: jsonb
+    response_payload: jsonb
+}
+
 ' Relationships
-accounts -[#ffffff]right-> transactions
-accounts -[#ffffff]left-> account_types
-accounts -[#ffffff]up-> institutions
-accounts -[#ffffff]right-> depository_accounts
-accounts -[#ffffff]right-> credit_accounts
-accounts -[#ffffff]right-> investment_accounts
-accounts -[#ffffff]right-> loan_accounts
+institutions -[#ffffff]-> account_history
+account_history -[#ffffff]-> accounts
+account_history -[#ffffff]-> depository_accounts
+account_history -[#ffffff]-> credit_accounts
+account_history -[#ffffff]-> investment_accounts
+account_history -[#ffffff]-> loan_accounts
+institutions -[#ffffff]-> institution_cursors
+institutions -[#ffffff]-> access_tokens
+accounts -[#ffffff]-> transactions
 
 @enduml
