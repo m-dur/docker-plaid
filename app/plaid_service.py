@@ -253,9 +253,9 @@ def get_transactions_sync(access_token, cursor=None, institution_id=None, retry_
 @track_plaid_call(product='link', operation='create_token')
 def create_and_store_link_token():
     """Create and store a link token in the session"""
+    print("\n=== Starting Link Token Creation ===")
     try:
         client = create_plaid_client()
-        webhook_url = f"{Config.APP_URL}/webhook"
         
         request = LinkTokenCreateRequest(
             products=[Products("transactions")],
@@ -266,23 +266,26 @@ def create_and_store_link_token():
             client_name="Financial Data Fetcher",
             country_codes=[CountryCode('US')],
             language='en',
-            webhook=webhook_url,
             user=LinkTokenCreateRequestUser(
                 client_user_id=str(time.time())
             ),
             transactions={
-                "days_requested": 360  # Request 12 months of history
+                "days_requested": 360
             }
         )
+        
+        print("Sending link token creation request to Plaid...")
         response = client.link_token_create(request)
         token = response['link_token']
         
+        print(f"✓ Link token created successfully: {token[:10]}...")
         session['link_token'] = token
-        save_link_token(token)
         
         return token
     except plaid.ApiException as e:
-        print(f"Error creating link token: {e}")
+        print(f"❌ Error creating link token: {e}")
+        print(f"Error code: {e.code}")
+        print(f"Error message: {e.message}")
         return None
 
 def save_link_token(token):

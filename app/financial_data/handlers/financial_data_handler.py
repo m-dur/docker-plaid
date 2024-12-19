@@ -166,27 +166,32 @@ class FinancialDataHandler:
             # Get transactions based on whether this is initial load or update
             if item_info and (item_info.get('is_new_account') or has_new_accounts):
                 print("New account(s) detected - fetching full transaction history")
-                try:
-                    initial_response = get_initial_transactions(access_token)
-                    transactions_response = type('TransactionsResponse', (), {
-                        'accounts': initial_response['accounts'],
-                        'added': initial_response['transactions'],
-                        'modified': [],
-                        'removed': [],
-                        'has_more': False,
-                        'next_cursor': None
-                    })()
-                except Exception as e:
-                    if 'PRODUCT_NOT_READY' in str(e):
-                        print("Initial transaction fetch failed - falling back to sync endpoint")
-                        transactions_response = get_transactions_sync(access_token, None, institution_info['institution_id'])
-                    else:
-                        raise
-            else:
-                current_cursor = get_saved_cursor(institution_info['institution_id'])
-                print(f"Existing accounts - using sync with cursor: {current_cursor}")
-                transactions_response = get_transactions_sync(access_token, current_cursor, institution_info['institution_id'])
-            
+                max_retries = 3
+                retry_delay = 5  # Start with 5 seconds
+                
+                for attempt in range(max_retries):
+                    try:
+                        initial_response = get_initial_transactions(access_token)
+                        transactions_response = type('TransactionsResponse', (), {
+                            'accounts': initial_response['accounts'],
+                            'added': initial_response['transactions'],
+                            'modified': [],
+                            'removed': [],
+                            'has_more': False,
+                            'next_cursor': None
+                        })()
+                        break  # Success, exit retry loop
+                    except Exception as e:
+                        if 'PRODUCT_NOT_READY' in str(e) and attempt < max_retries - 1:
+                            print(f"Product not ready, waiting {retry_delay} seconds... (Attempt {attempt + 1}/{max_retries})")
+                            time.sleep(retry_delay)
+                            retry_delay *= 2  # Exponential backoff
+                        else:
+                            if attempt == max_retries - 1:
+                                print("Max retries reached, falling back to sync endpoint")
+                            transactions_response = get_transactions_sync(access_token, None, institution_info['institution_id'])
+                            break
+
             # Get balances from transactions response
             bank_balances = transactions_response.accounts if hasattr(transactions_response, 'accounts') else []
             

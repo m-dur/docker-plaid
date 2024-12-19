@@ -23,6 +23,7 @@ from routes.analytics import analytics_bp
 from routes.transactions import transactions_bp
 import logging
 import threading
+import time
 
 # Then create the Flask app
 app = Flask(__name__)
@@ -66,23 +67,39 @@ def index():
 
 @app.route('/exchange_public_token', methods=['POST'])
 def exchange_public_token():
+    print("\n=== Starting Public Token Exchange ===")
     try:
         data = request.get_json()
-        public_token = data['public_token']
-        metadata = data['metadata']
+        public_token = data.get('public_token')
+        metadata = data.get('metadata')
         
-        # Create Plaid client first
+        if not public_token or not metadata:
+            return jsonify({'error': 'Missing required data'}), 400
+            
+        print(f"Received metadata for institution: {metadata['institution']['name']}")
+        
+        # Increase delay to prevent rate limiting
+        time.sleep(2)  # Increased from 1 to 2 seconds
+        
         client = create_plaid_client()
         
-        # Exchange public token
-        exchange_response = client.item_public_token_exchange(
-            ItemPublicTokenExchangeRequest(public_token=public_token)
-        )
+        # Add more detailed logging
+        try:
+            exchange_response = client.item_public_token_exchange(
+                ItemPublicTokenExchangeRequest(public_token=public_token)
+            )
+        except Exception as e:
+            print(f"Plaid exchange error: {str(e)}")
+            raise
+            
         access_token = exchange_response.access_token
         item_id = exchange_response.item_id
         institution_id = metadata['institution']['institution_id']
         
-        # Step 1: Just save access token and basic institution info
+        # Add transaction logging
+        print(f"Successfully exchanged token for institution {institution_id}")
+        
+        # Save access token
         save_access_token(
             access_token=access_token,
             item_id=item_id,
@@ -90,24 +107,14 @@ def exchange_public_token():
             institution_name=metadata['institution']['name']
         )
         
-        # Step 2: Schedule transaction fetch after a delay
-        def delayed_transaction_fetch():
-            try:
-                handler = FinancialDataHandler()
-                item_info = {
-                    'institution_id': institution_id,
-                    'is_new_account': True
-                }
-                handler.fetch_and_process_financial_data(access_token, item_info=item_info)
-            except Exception as e:
-                app.logger.error(f"Error in delayed transaction fetch: {str(e)}")
+        return jsonify({
+            'success': True,
+            'message': 'Account linked successfully',
+            'institution_id': institution_id
+        })
         
-        # Schedule the transaction fetch to run after 5 seconds
-        threading.Timer(5.0, delayed_transaction_fetch).start()
-        
-        return jsonify({'success': True})
     except Exception as e:
-        app.logger.error(f"Error in exchange_public_token: {str(e)}")
+        print(f"Detailed error in exchange_public_token: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/fetch_financial_data', methods=['POST'])
@@ -180,20 +187,21 @@ def remove_institution(institution_id=None):
                 access_token = result[0]
                 token_id = result[1]
                 
-                # First delete plaid_api_calls records
-                cur.execute("""
-                    DELETE FROM plaid_api_calls 
-                    WHERE access_token_id = %s
-                """, (token_id,))
-
                 try:
+                    # Remove from Plaid first
                     client = create_plaid_client()
                     plaid_request = ItemRemoveRequest(access_token=access_token)
                     client.item_remove(plaid_request)
                 except Exception as e:
                     app.logger.error(f"Error removing item from Plaid: {e}")
+                
+                # Delete all plaid API calls first
+                cur.execute("""
+                    DELETE FROM plaid_api_calls 
+                    WHERE access_token_id = %s
+                """, (token_id,))
             
-            # Delete transactions using account_history reference
+            # Delete transactions
             cur.execute("""
                 DELETE FROM transactions 
                 WHERE account_id IN (
@@ -203,26 +211,28 @@ def remove_institution(institution_id=None):
                 )
             """, (institution_id,))
             
-            # Delete account_history records directly
+            # Delete account history
             cur.execute("""
                 DELETE FROM account_history 
                 WHERE institution_id = %s
             """, (institution_id,))
             
-            # Delete cursor if exists
+            # Delete cursor
             cur.execute("DELETE FROM institution_cursors WHERE institution_id = %s", (institution_id,))
             
-            # Now we can safely delete access token
+            # Now delete access token
             cur.execute("DELETE FROM access_tokens WHERE institution_id = %s", (institution_id,))
             
-            # Finally delete the institution
+            # Finally delete institution
             cur.execute("DELETE FROM institutions WHERE id = %s", (institution_id,))
             
             cur.execute("COMMIT")
+            session['last_removal_time'] = time.time()
             return jsonify({'success': True}), 200
             
         except Exception as e:
             cur.execute("ROLLBACK")
+            app.logger.error(f"Error in remove_institution: {str(e)}")
             raise e
         finally:
             cur.close()
@@ -288,65 +298,55 @@ def export_query():
 
 @app.route('/webhook', methods=['POST'])
 def webhook_handler():
-    print("----------------------------------------")
-    print("Webhook received!")
-    print("Headers:", dict(request.headers))
-    print("Data:", request.data)
-    print("JSON:", request.json)
-    print("----------------------------------------")
+    print("\n=== Webhook Received ===")
+    print(f"Headers: {dict(request.headers)}")
+    print(f"Data: {request.data}")
+    print(f"JSON: {request.json}")
     
     # Get Plaid-Verification header
     verification_header = request.headers.get('Plaid-Verification')
     
     if verification_header:
-        # Get the raw request body for verification
+        print("\nVerifying webhook signature...")
         request_body = request.get_data().decode('utf-8')
         
-        # Calculate the webhook signature
         webhook_secret = Config.PLAID_WEBHOOK_SECRET
         if not webhook_secret:
-            app.logger.error("Webhook secret not configured")
+            error_msg = "❌ Webhook secret not configured"
+            app.logger.error(error_msg)
+            print(error_msg)
             return jsonify({'error': 'Webhook secret not configured'}), 500
-            
+        
         calculated_signature = hmac.new(
             webhook_secret.encode('utf-8'),
             request_body.encode('utf-8'),
             hashlib.sha256
         ).hexdigest()
         
-        # Compare signatures
+        print(f"Expected signature: {verification_header}")
+        print(f"Calculated signature: {calculated_signature}")
+        
         if verification_header != calculated_signature:
-            app.logger.error("Invalid webhook signature")
+            error_msg = "❌ Invalid webhook signature"
+            app.logger.error(error_msg)
+            print(error_msg)
             return jsonify({'error': 'Invalid webhook signature'}), 401
     
     webhook_data = request.json
     webhook_type = webhook_data.get('webhook_type')
     webhook_code = webhook_data.get('webhook_code')
-
+    
+    print(f"\nWebhook Type: {webhook_type}")
+    print(f"Webhook Code: {webhook_code}")
+    
     if webhook_type == 'TRANSACTIONS' and webhook_code == 'SYNC_UPDATES_AVAILABLE':
         item_id = webhook_data.get('item_id')
-        
-        conn = get_db_connection()
-        cur = conn.cursor()
+        print(f"Processing transaction updates for item: {item_id}")
         
         try:
-            # Get access token from database using item_id
-            cur.execute("""
-                SELECT access_token 
-                FROM access_tokens 
-                WHERE item_id = %s
-            """, (item_id,))
-            result = cur.fetchone()
-            
-            if not result:
-                return jsonify({'error': 'Item not found'}), 404
-                
-            access_token = result[0]
-            
-            # Only process transaction updates
             handler = FinancialDataHandler()
             result = handler.process_transaction_updates(access_token)
-            
+            print(f"✓ Successfully processed transaction updates: {result}")
             return jsonify({
                 'success': True,
                 'message': 'Successfully processed transaction updates',
@@ -354,13 +354,10 @@ def webhook_handler():
             }), 200
             
         except Exception as e:
-            app.logger.error(f"Error processing webhook: {str(e)}")
+            error_msg = f"❌ Error processing webhook: {str(e)}"
+            app.logger.error(error_msg)
+            print(error_msg)
             return jsonify({'error': str(e)}), 500
-        finally:
-            cur.close()
-            conn.close()
-
-    return jsonify({'message': 'Webhook received but no action taken'}), 200
 
 @app.route('/test_webhook', methods=['POST'])
 def test_webhook():
@@ -557,6 +554,54 @@ def refresh_financial_data(institution_id):
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/create_link_token', methods=['GET'])
+def create_new_link_token():
+    max_retries = 3
+    retry_delay = 2
+    
+    for attempt in range(max_retries):
+        try:
+            link_token = create_and_store_link_token()
+            if link_token:
+                return jsonify({'link_token': link_token})
+            
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                retry_delay *= 2
+                continue
+                
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                retry_delay *= 2
+                continue
+            return jsonify({'error': str(e)}), 500
+            
+    return jsonify({'error': 'Failed to create link token after multiple attempts'}), 500
+
+@app.route('/get_institutions')
+def get_institutions():
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    try:
+        cur.execute("""
+            SELECT i.*, at.access_token IS NOT NULL as has_access_token
+            FROM institutions i
+            LEFT JOIN access_tokens at ON i.id = at.institution_id
+        """)
+        institutions = cur.fetchall()
+        
+        return jsonify({
+            'success': True,
+            'institutions': institutions
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)

@@ -276,6 +276,37 @@
     .table-stats td.table-name {
         color: #333;
     }
+
+    .error-container {
+        background-color: #fee;
+        border: 1px solid #fcc;
+        border-radius: 4px;
+        padding: 15px;
+        margin: 10px 0;
+    }
+
+    .error-title {
+        color: #c00;
+        font-weight: bold;
+        margin: 0 0 10px 0;
+    }
+
+    .error-message {
+        color: #333;
+        margin: 5px 0;
+    }
+
+    .error-details {
+        color: #666;
+        font-size: 0.9em;
+        margin: 5px 0;
+    }
+
+    .error-time {
+        color: #999;
+        font-size: 0.8em;
+        margin: 5px 0 0 0;
+    }
   </style>
 </head>
 <body style="background-color:#B1EEFC;">
@@ -382,51 +413,295 @@
   </div>
   <script type="text/javascript">
   (function($) {
-    var linkToken = {{ link_token | tojson }};
-    var handler = Plaid.create({
-      token: linkToken,
-      onSuccess: async (public_token, metadata) => {
-        // Show loading overlay
+    let handler = null;
+
+    async function initializePlaidHandler() {
+        // Force cleanup of any existing handler
+        if (handler) {
+            await handler.destroy();
+            handler = null;
+        }
+        
+        // Wait for any pending operations to complete
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        const response = await fetch('/create_link_token');
+        const data = await response.json();
+        
+        return Plaid.create({
+            token: data.link_token,
+            onSuccess: async (public_token, metadata) => {
+                handler = null;  // Clear the handler immediately
+                await handlePlaidSuccess(public_token, metadata);
+            },
+            onExit: async () => {
+                handler = null;  // Clear the handler on exit
+            },
+            onLoad: () => {
+                console.log('Plaid handler loaded successfully');
+            }
+        });
+    }
+
+    // Separate success handler function
+    async function handlePlaidSuccess(public_token, metadata) {
+        console.log('=== Plaid Link Success ===');
         $('.loading-overlay').css('display', 'flex');
         $('.loading-text').text('Linking your account...');
         
+        const maxRetries = 3;
+        let retryCount = 0;
+        
         try {
-            const response = await fetch('/exchange_public_token', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    public_token: public_token,
-                    metadata: metadata
-                })
-            });
-            
-            if (response.ok) {
-                $('.loading-text').text('Fetching initial data...');
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                window.location.reload();    // Will trigger updateDatabaseStatistics via DOMContentLoaded
-            } else {
-                throw new Error('Failed to exchange token');
+            while (retryCount < maxRetries) {
+                try {
+                    const response = await fetch('/exchange_public_token', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            public_token: public_token,
+                            metadata: metadata
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(await response.text());
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // First check if institutions-list exists, if not create it
+                    if ($('.institutions-list').length === 0) {
+                        $('.outer').prepend('<div class="institutions-list"><h3>Connected Institutions:</h3></div>');
+                    }
+
+                    // Create the new institution HTML
+                    const institutionHtml = `
+                        <div class="institution-container">
+                            <div class="institution-info">
+                                <p>Connected Institution: <strong>${metadata.institution.name}</strong></p>
+                                <p>Institution ID: <code>${data.institution_id}</code></p>
+                                <button class="remove-institution" data-institution-id="${data.institution_id}">
+                                    Remove Institution
+                                </button>
+                            </div>
+                            <div class="metadata-sections">
+                                <div class="institution-metadata" id="metadata-${data.institution_id}">
+                                    <h4>Account Status</h4>
+                                    <div class="metadata-grid">
+                                        <div class="metadata-item">
+                                            <span class="label">Last Transaction</span>
+                                            <span class="value" id="last-transaction-${data.institution_id}">Never</span>
+                                        </div>
+                                        <div class="metadata-item">
+                                            <span class="label">Last Refresh</span>
+                                            <span class="value" id="last-refresh-${data.institution_id}">Never</span>
+                                        </div>
+                                        <div class="metadata-item">
+                                            <span class="label">New Transactions</span>
+                                            <span class="value" id="last-credit-${data.institution_id}">0 new transactions</span>
+                                        </div>
+                                        <div class="metadata-item">
+                                            <span class="label">Connected On</span>
+                                            <span class="value" id="connected-on-${data.institution_id}">${new Date().toLocaleString()}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="account-data" id="account-data-${data.institution_id}">
+                                    <h4>Account Data</h4>
+                                    <div class="metadata-grid">
+                                        <div class="metadata-item">
+                                            <span class="label">Connected Accounts</span>
+                                            <span class="value" id="account-count-${data.institution_id}">0</span>
+                                        </div>
+                                        <div class="metadata-item">
+                                            <span class="label">Total Transactions</span>
+                                            <span class="value" id="transaction-count-${data.institution_id}">0</span>
+                                        </div>
+                                        <div class="metadata-item">
+                                            <span class="label">Uncategorized Transactions</span>
+                                            <span class="value" id="uncategorized-count-${data.institution_id}">0</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    // Add the new institution to the list
+                    $('.institutions-list').append(institutionHtml);
+
+                    // Show the fetch button
+                    $('#fetch-data-button').show();
+
+                    try {
+                        // Fetch and update the institution metadata
+                        await updateInstitutionMetadata(data.institution_id);
+                    } catch (metadataError) {
+                        console.error('Error updating metadata:', metadataError);
+                        // Continue even if metadata update fails
+                    }
+
+                    // Reattach event listeners
+                    attachEventListeners();
+                    
+                    return; // Success case
+                    
+                } catch (error) {
+                    console.error(`Attempt ${retryCount + 1} failed:`, error);
+                    retryCount++;
+                    
+                    if (retryCount === maxRetries) {
+                        $('#results').html(`
+                            <div class="error-container">
+                                <p class="error-title">Error linking account:</p>
+                                <p class="error-message">${error.message}</p>
+                                <p class="error-time">Time: ${new Date().toLocaleString()}</p>
+                            </div>
+                        `);
+                        break;
+                    }
+                    
+                    await new Promise(resolve => setTimeout(resolve, 2000 * retryCount));
+                }
             }
-        } catch (error) {
-            console.error('Error:', error);
-            $('#results').html('<p>Error linking account. Please try again.</p>');
+        } finally {
+            // Always hide the loading overlay
             $('.loading-overlay').hide();
         }
-      },
-      onExit: function(err, metadata) {
-        console.log('onexit invoked');
-        if (err != null) {
-          $('#results').html('<p>Error linking account: ' + err.error_message + '</p>');
-        }
-      },
-      onEvent: function(eventName, metadata) {
-        console.log('event name is:', eventName);
-      }
-    });
+    }
 
-    $('#link-button').on('click', function(e) { handler.open(); });
+    // Update the updateInstitutionMetadata function to be more robust
+    async function updateInstitutionMetadata(institutionId) {
+        try {
+            const response = await fetch(`/api/institution_metadata/${institutionId}`);
+            if (!response.ok) {
+                throw new Error('Failed to fetch institution metadata');
+            }
+            
+            const data = await response.json();
+            
+            // Update all metadata fields
+            const fields = {
+                'last-transaction': data.last_transaction ? new Date(data.last_transaction).toLocaleString() : 'Never',
+                'last-refresh': data.last_refresh ? new Date(data.last_refresh).toLocaleString() : 'Never',
+                'last-credit': `${data.new_transactions} new transactions`,
+                'connected-on': data.connected_on ? new Date(data.connected_on).toLocaleString() : 'Never',
+                'account-count': data.account_count || 0,
+                'transaction-count': data.transaction_count || 0,
+                'uncategorized-count': data.uncategorized_count || 0
+            };
+
+            Object.entries(fields).forEach(([field, value]) => {
+                const element = document.getElementById(`${field}-${institutionId}`);
+                if (element) {
+                    element.textContent = value;
+                }
+            });
+
+        } catch (error) {
+            console.error('Error updating institution metadata:', error);
+        }
+    }
+
+    // Add new function to update page content
+    async function updatePageContent() {
+        try {
+            // Fetch updated institutions list
+            const response = await fetch('/get_institutions');
+            const data = await response.json();
+            
+            if (!data.institutions) {
+                throw new Error('No institutions data received');
+            }
+            
+            // Update the institutions list HTML
+            const institutionsHtml = data.institutions.map(institution => `
+                <div class="institution-container">
+                    <div class="institution-info">
+                        <p>Connected Institution: <strong>${institution.name}</strong></p>
+                        <p>Institution ID: <code>${institution.id}</code></p>
+                        <button class="remove-institution" data-institution-id="${institution.id}">
+                            Remove Institution
+                        </button>
+                    </div>
+                    <div class="metadata-sections">
+                        <!-- Add your metadata sections here -->
+                        ${generateMetadataHtml(institution)}
+                    </div>
+                </div>
+            `).join('');
+            
+            // Update the DOM
+            $('.institutions-list').html(`
+                <h3>Connected Institutions:</h3>
+                ${institutionsHtml}
+            `);
+            
+            // Show/hide fetch button based on institutions
+            $('#fetch-data-button').toggle(data.institutions.length > 0);
+            
+            // Update metadata for each institution
+            data.institutions.forEach(inst => {
+                updateInstitutionMetadata(inst.id);
+            });
+            
+            // Reattach event listeners
+            attachEventListeners();
+            
+        } catch (error) {
+            console.error('Error updating page content:', error);
+            $('#results').html(`
+                <div class="error-container">
+                    <p class="error-title">Error updating page:</p>
+                    <p class="error-message">${error.message}</p>
+                </div>
+            `);
+        }
+    }
+
+    // Helper function to generate metadata HTML
+    function generateMetadataHtml(institution) {
+        return `
+            <div class="institution-metadata" id="metadata-${institution.id}">
+                <h4>Account Status</h4>
+                <div class="metadata-grid">
+                    <!-- Add your metadata items here -->
+                    <div class="metadata-item">
+                        <span class="label">Last Transaction</span>
+                        <span class="value" id="last-transaction-${institution.id}">Loading...</span>
+                    </div>
+                    <!-- Add other metadata items -->
+                </div>
+            </div>
+            <div class="account-data" id="account-data-${institution.id}">
+                <!-- Similar structure for account data -->
+            </div>
+        `;
+    }
+
+    // Function to reattach event listeners
+    function attachEventListeners() {
+        $('.remove-institution').off('click').on('click', function() {
+            const institutionId = $(this).data('institution-id');
+            // Your existing remove institution code
+        });
+    }
+
+    // Add click handler for link button
+    $('#link-button').on('click', async function() {
+        if (handler) return;  // Prevent multiple handlers
+        
+        try {
+            handler = await initializePlaidHandler();
+            handler.open();
+        } catch (error) {
+            console.error('Failed to initialize Plaid:', error);
+            handler = null;
+        }
+    });
 
     $('#fetch-data-button').on('click', function(e) {
         // Show loading overlay
@@ -492,33 +767,35 @@
         }
         $('.remove-institution').on('click', function() {
             const institutionId = $(this).data('institution-id');
-            if (confirm('Are you sure you want to remove this institution?')) {
-                $('.loading-overlay').css('display', 'flex');
-                $('.loading-text').text('Removing institution...');
-                
-                $.ajax({
-                    url: '/remove_institution',
-                    method: 'POST',
-                    contentType: 'application/json',
-                    data: JSON.stringify({ institution_id: institutionId }),
-                    success: function() {
-                        setTimeout(() => {
-                            window.location.reload();  // Will trigger updateDatabaseStatistics via DOMContentLoaded
-                        }, 500);
-                    },
-                    error: function(xhr) {
-                        $('.loading-overlay').hide();
-                        let errorMessage = 'Error removing institution. ';
-                        try {
-                            const response = JSON.parse(xhr.responseText);
-                            errorMessage += response.error || 'Please try again.';
-                        } catch (e) {
-                            errorMessage += 'Please try again.';
-                        }
-                        alert(errorMessage);
+            $('.loading-overlay').css('display', 'flex');
+            $('.loading-text').text('Removing institution...');
+            
+            $.ajax({
+                url: '/remove_institution',
+                method: 'POST',
+                data: JSON.stringify({ institution_id: institutionId }),
+                contentType: 'application/json',
+                success: function() {
+                    // Clean up the Plaid handler before reloading
+                    if (handler) {
+                        handler.destroy();
+                        handler = null;
                     }
-                });
-            }
+                    // Force a complete page reload from server
+                    window.location.href = window.location.href;
+                },
+                error: function(xhr) {
+                    $('.loading-overlay').hide();
+                    let errorMessage = 'Error removing institution. ';
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        errorMessage += response.error || 'Please try again.';
+                    } catch (e) {
+                        errorMessage += 'Please try again.';
+                    }
+                    alert(errorMessage);
+                }
+            });
         });
     });
   })(jQuery);
