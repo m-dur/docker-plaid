@@ -795,7 +795,16 @@ def cashflow():
 def cashflow_summary():
     try:
         start_date = datetime(2024, 7, 1)
-        end_date = datetime.fromisoformat(request.args.get('end_date').replace('Z', '+00:00'))
+        
+        # Get the latest transaction date
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        latest_date_query = """
+        SELECT MAX(date) FROM stg_transactions;
+        """
+        cur.execute(latest_date_query)
+        end_date = cur.fetchone()[0]
         
         current_app.logger.info(f"Using dates - Start: {start_date}, End: {end_date}")
         
@@ -883,18 +892,59 @@ def cashflow_summary():
             total_cash_out = sum(cash_out)
             net_cash_flow = total_cash_in - total_cash_out
             
-            response_data = {
+            # Add query for transactions using same logic as monthly summary
+            transactions_query = """
+            WITH cash_flows AS (
+                SELECT 
+                    date,
+                    name as description,
+                    category,
+                    CASE 
+                        WHEN amount < 0 
+                        AND LOWER(COALESCE(category, '')) NOT LIKE '%%transfer%%'
+                        THEN ABS(amount)
+                        ELSE 0 
+                    END as inflow,
+                    CASE 
+                        WHEN amount > 0 
+                        AND (name ILIKE '%%External Withdrawal%%' or name ILIKE '%%Check%%')
+                        AND name not ilike '%%MONEYLINE%%'
+                        AND name not ilike '%%WF%%'
+                        THEN amount
+                        ELSE 0 
+                    END as outflow
+                FROM stg_transactions 
+                WHERE date BETWEEN %s AND %s
+            )
+            SELECT 
+                date,
+                description,
+                category,
+                inflow,
+                outflow
+            FROM cash_flows
+            WHERE inflow > 0 OR outflow > 0
+            ORDER BY date DESC
+            """
+            
+            cur.execute(transactions_query, (start_date, end_date))
+            transactions = [{
+                'date': row[0].strftime('%Y-%m-%d'),
+                'description': row[1],
+                'category': row[2] or 'Uncategorized',
+                'amount': float(row[3] if row[3] > 0 else -row[4])
+            } for row in cur.fetchall()]
+            
+            return jsonify({
                 'total_cash_in': total_cash_in,
                 'total_cash_out': total_cash_out,
                 'net_cash_flow': net_cash_flow,
                 'months': months,
                 'cash_in': cash_in,
                 'cash_out': cash_out,
-                'net_flow': net_flow
-            }
-            
-            current_app.logger.info("Response data prepared successfully")
-            return jsonify(response_data)
+                'net_flow': net_flow,
+                'transactions': transactions
+            })
             
         except Exception as e:
             current_app.logger.error(f"Query execution error: {str(e)}")
@@ -951,6 +1001,74 @@ def get_balances():
     finally:
         cur.close()
         conn.close()
+
+@analytics_bp.route('/api/daily/expenses')
+def daily_expenses():
+    try:
+        selected_month = request.args.get('month')  # Format: "YYYY-MM"
+        
+        # Convert selected_month to start and end dates
+        start_date = datetime.strptime(f"{selected_month}-01", "%Y-%m-%d")
+        end_date = start_date + relativedelta(months=1) - timedelta(days=1)
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        query = """
+        WITH daily_expenses AS (
+            SELECT 
+                date_trunc('day', date) as day,
+                name as description,
+                category,
+                amount
+            FROM stg_transactions
+            WHERE date >= %s 
+            AND date < %s
+            AND amount > 0
+            AND LOWER(COALESCE(category, '')) NOT LIKE '%%transfer%%'
+            ORDER BY date
+        )
+        SELECT 
+            EXTRACT(DAY FROM day) as day_of_month,
+            json_agg(
+                json_build_object(
+                    'description', description,
+                    'category', COALESCE(category, 'Uncategorized'),
+                    'amount', amount
+                )
+            ) as transactions,
+            SUM(amount) as daily_total
+        FROM daily_expenses
+        GROUP BY day_of_month
+        ORDER BY day_of_month;
+        """
+        
+        cur.execute(query, (start_date, end_date))
+        results = cur.fetchall()
+        
+        # Initialize days dictionary
+        days = {}
+        
+        # Process results
+        for row in results:
+            day = int(row[0])
+            days[day] = {
+                'total': float(row[2]),
+                'transactions': row[1]
+            }
+        
+        return jsonify({'days': days})
+        
+    except Exception as e:
+        current_app.logger.error(f"Error in daily_expenses: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+@analytics_bp.route('/daily')
+def daily():
+    return render_template('daily.html')
 
 # Add all other analytics routes from app.py
 # Including:

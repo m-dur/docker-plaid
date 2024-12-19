@@ -22,7 +22,8 @@ def save_accounts_to_db(accounts_dfs, conn=None, cur=None):
             'last_statement_balance', 'last_statement_date',
             'minimum_payment_amount', 'next_payment_due_date',
             'apr_percentage', 'apr_type', 'balance_subject_to_apr',
-            'interest_charge_amount', 'pull_date'
+            'interest_charge_amount', 'last_payment_date',
+            'last_payment_amount', 'last_statement_issue_date', 'pull_date'
         ]
         
         for account_type in ['depository', 'credit']:

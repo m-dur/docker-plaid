@@ -31,6 +31,10 @@ CREATE TABLE institutions (
 );
 
 -- Account history
+ALTER TABLE account_history
+ADD COLUMN IF NOT EXISTS last_payment_date DATE,
+ADD COLUMN IF NOT EXISTS last_payment_amount NUMERIC(12,2),
+ADD COLUMN IF NOT EXISTS last_statement_issue_date DATE;
 CREATE TABLE account_history (
     history_id SERIAL PRIMARY KEY,
     account_id VARCHAR(255),
@@ -84,7 +88,6 @@ ORDER BY account_id, pull_date DESC;
 
 -- Current credit accounts view
 --drop view credit_accounts;
-CREATE OR REPLACE VIEW credit_accounts AS 
 with base as (
   SELECT
     account_id,
@@ -108,6 +111,9 @@ with base as (
     last_statement_date,
     minimum_payment_amount,
     next_payment_due_date,
+    last_payment_date,
+    last_payment_amount,
+    last_statement_issue_date,
     apr_percentage,
     apr_type,
     balance_subject_to_apr,

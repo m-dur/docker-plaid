@@ -176,6 +176,7 @@ class FinancialDataHandler:
                 for attempt in range(max_retries):
                     try:
                         initial_response = get_initial_transactions(access_token)
+                        print(f"Debug: Initial response cursor: {initial_response.get('next_cursor')}")
                         transactions_response = type('TransactionsResponse', (), {
                             'accounts': initial_response['accounts'],
                             'added': initial_response['transactions'],
@@ -229,10 +230,16 @@ class FinancialDataHandler:
                     results['transactions']['removed'] = len(transactions_response.removed)
                     print(f"Debug: Updated results after processing: {results}")
             
-            # Only save cursor for sync operations (not initial loads)
-            if not (item_info and (item_info.get('is_new_account') or has_new_accounts)):
-                if transactions_response.next_cursor:
+            # Save cursor regardless of whether it's an initial load or sync
+            if hasattr(transactions_response, 'next_cursor') and transactions_response.next_cursor:
+                print(f"Debug: Attempting to save cursor: {transactions_response.next_cursor[:10]}... for institution {institution_info['institution_id']}")
+                try:
                     save_cursor(transactions_response.next_cursor, institution_info['institution_id'])
+                    print(f"Debug: Successfully saved cursor for institution {institution_info['institution_id']}")
+                except Exception as e:
+                    print(f"Debug: Error saving cursor: {str(e)}")
+            else:
+                print("Debug: No cursor available to save")
             
             # Commit all changes
             conn.commit()
@@ -591,3 +598,29 @@ class FinancialDataHandler:
         finally:
             cur.close()
             conn.close()
+
+    def cleanup_failed_refresh(self, institution_id, current_pull_date, cur):
+        try:
+            # Only delete data from the current refresh attempt
+            cur.execute("BEGIN")
+            
+            # Delete only current pull cycle's data
+            cur.execute("""
+                DELETE FROM account_history 
+                WHERE institution_id = %s AND pull_date = %s
+            """, (institution_id, current_pull_date))
+            
+            # Delete only current pull cycle's transactions
+            cur.execute("""
+                DELETE FROM transactions 
+                WHERE account_id IN (
+                    SELECT account_id FROM accounts 
+                    WHERE institution_id = %s
+                ) AND pull_date = %s
+            """, (institution_id, current_pull_date))
+            
+            cur.execute("COMMIT")
+            
+        except Exception as cleanup_error:
+            logger.error(f"Error during cleanup: {cleanup_error}")
+            cur.execute("ROLLBACK")

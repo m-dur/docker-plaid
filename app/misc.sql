@@ -92,3 +92,52 @@ order by 4 desc
 
 
 
+SELECT * FROM account_history
+
+-- Update credit limit for Visa Credit Card
+UPDATE account_history
+SET balance_limit = COALESCE(balance_limit, 0) + 27000
+WHERE account_id IN (
+    SELECT account_id 
+    FROM accounts 
+    WHERE account_name = 'Visa Credit Card'
+)
+AND pull_date = (
+    SELECT MAX(pull_date) 
+    FROM account_history ah2 
+    WHERE ah2.account_id = account_history.account_id
+);
+
+-- Verify the update
+SELECT 
+    a.account_name,
+    ah.pull_date,
+    ah.balance_limit
+FROM account_history ah
+JOIN accounts a ON ah.account_id = a.account_id
+WHERE a.account_name = 'Visa Credit Card'
+ORDER BY ah.pull_date DESC
+LIMIT 1;
+
+select account_name
+    , min(balance_current) as min_balance_current
+    , max(balance_current) as max_balance_current
+    , min(balance_limit) as min_balance_limit
+    , max(balance_limit) as max_balance_limit
+    , min(created_at) as min_created_at
+    , max(created_at) as max_created_at
+from account_history
+group by 1
+order by 1
+
+select * from account_history;
+
+SELECT 
+    account_name,
+    last_payment_date,
+    last_payment_amount,
+    last_statement_issue_date
+FROM account_history
+WHERE type = 'credit'
+ORDER BY pull_date DESC
+LIMIT 5;
