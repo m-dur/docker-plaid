@@ -18,6 +18,7 @@ from psycopg2.extras import execute_values
 import logging
 from plaid.model.transactions_get_request import TransactionsGetRequest
 import time
+import plaid
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -163,6 +164,9 @@ class FinancialDataHandler:
             # Check if there are any new accounts
             has_new_accounts = bool(plaid_account_ids - existing_account_ids)
 
+            # Initialize transactions_response before the conditional block
+            transactions_response = None
+            
             # Get transactions based on whether this is initial load or update
             if item_info and (item_info.get('is_new_account') or has_new_accounts):
                 print("New account(s) detected - fetching full transaction history")
@@ -189,8 +193,15 @@ class FinancialDataHandler:
                         else:
                             if attempt == max_retries - 1:
                                 print("Max retries reached, falling back to sync endpoint")
-                            transactions_response = get_transactions_sync(access_token, None, institution_info['institution_id'])
+                                transactions_response = get_transactions_sync(access_token, None)
                             break
+            else:
+                # If not a new account, use sync endpoint
+                transactions_response = get_transactions_sync(access_token, None)
+
+            # Add a check to ensure transactions_response is not None
+            if transactions_response is None:
+                raise Exception("Failed to fetch transactions from both initial and sync endpoints")
 
             # Get balances from transactions response
             bank_balances = transactions_response.accounts if hasattr(transactions_response, 'accounts') else []
@@ -247,7 +258,17 @@ class FinancialDataHandler:
                     # Delete only data from current refresh cycle
                     cur.execute("BEGIN")
                     
-                    # Delete transactions from current pull cycle
+                    # First delete plaid API calls
+                    cur.execute("""
+                        DELETE FROM plaid_api_calls 
+                        WHERE access_token_id IN (
+                            SELECT token_id 
+                            FROM access_tokens 
+                            WHERE institution_id = %s
+                        )
+                    """, (institution_id,))
+                    
+                    # Then delete transactions from current pull cycle
                     cur.execute("""
                         DELETE FROM transactions 
                         WHERE account_id IN (
@@ -442,36 +463,131 @@ class FinancialDataHandler:
         cur = conn.cursor()
         
         try:
-            # Get current accounts in database
-            cur.execute("""
-                SELECT account_id 
-                FROM accounts 
-                WHERE institution_id = %s
-            """, (institution_id,))
-            existing_account_ids = {row[0] for row in cur.fetchall()}
+            # Initialize transactions_response
+            transactions_response = None
             
             # Get new accounts from Plaid
             plaid_accounts = get_accounts(access_token)
-            plaid_account_ids = {acc.account_id for acc in plaid_accounts}
+            print(f"Debug - Accounts found: {len(plaid_accounts)}")
+            
+            # Try to get liabilities, but handle gracefully if not available
+            try:
+                liabilities = get_liabilities(access_token)
+            except plaid.ApiException as e:
+                if 'NO_LIABILITY_ACCOUNTS' in str(e):
+                    print("No liability accounts available - continuing")
+                else:
+                    print(f"Plaid API error getting liabilities: {str(e)}")
+            except Exception as e:
+                print(f"Unexpected error getting liabilities: {str(e)}")
             
             # Try transactions/get first with retries
             max_retries = 3
             retry_delay = 5  # Start with 5 seconds
+            last_error = None
             
             for attempt in range(max_retries):
                 try:
-                    initial_response = get_initial_transactions(access_token)
-                    if initial_response['transactions']:
-                        return self.process_transactions(initial_response, access_token)
+                    transactions_response = get_initial_transactions(access_token)
+                    
+                    # Create a response object if we got raw data
+                    if isinstance(transactions_response, dict):
+                        transactions_response = type('TransactionsResponse', (), {
+                            'transactions': transactions_response.get('transactions', []),
+                            'added': transactions_response.get('transactions', []),
+                            'modified': [],
+                            'removed': [],
+                            'has_more': transactions_response.get('has_more', False),
+                            'next_cursor': transactions_response.get('next_cursor')
+                        })()
+                    
+                    if transactions_response:
+                        return self.process_transactions(transactions_response, access_token)
+                    
                 except Exception as e:
+                    last_error = e
                     if 'PRODUCT_NOT_READY' in str(e) and attempt < max_retries - 1:
                         print(f"Product not ready, waiting {retry_delay} seconds...")
                         time.sleep(retry_delay)
-                        retry_delay *= 2  # Exponential backoff
+                        retry_delay *= 2
                         continue
-                    # Fall back to sync endpoint
+                    print(f"Error fetching transactions: {str(e)}")
+            
+            # If we got here, all attempts failed
+            if last_error:
+                print(f"All attempts failed. Last error: {last_error}")
+                # Try sync endpoint as last resort
+                try:
                     return self.process_transactions_sync(access_token, institution_id)
-                
+                except Exception as sync_error:
+                    print(f"Sync endpoint also failed: {sync_error}")
+                    return False
+            
+            return True  # No transactions to process
+            
+        finally:
+            cur.close()
+            conn.close()
+
+    def cleanup_institution_data(self, institution_id):
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        try:
+            cur.execute("BEGIN")
+            
+            # Get all access token IDs for this institution
+            cur.execute("""
+                SELECT token_id 
+                FROM access_tokens 
+                WHERE institution_id = %s
+            """, (institution_id,))
+            token_ids = [row[0] for row in cur.fetchall()]
+            
+            if token_ids:
+                # Delete plaid API calls first using IN clause
+                cur.execute("""
+                    DELETE FROM plaid_api_calls 
+                    WHERE access_token_id = ANY(%s)
+                """, (token_ids,))
+            
+            # Delete transactions
+            cur.execute("""
+                DELETE FROM transactions 
+                WHERE account_id IN (
+                    SELECT account_id 
+                    FROM accounts 
+                    WHERE institution_id = %s
+                )
+            """, (institution_id,))
+            
+            # Delete account history
+            cur.execute("""
+                DELETE FROM account_history 
+                WHERE institution_id = %s
+            """, (institution_id,))
+            
+            # Delete cursor
+            cur.execute("DELETE FROM institution_cursors WHERE institution_id = %s", (institution_id,))
+            
+            # Delete accounts
+            cur.execute("""
+                DELETE FROM accounts 
+                WHERE institution_id = %s
+            """, (institution_id,))
+            
+            # Finally delete access token
+            cur.execute("""
+                DELETE FROM access_tokens 
+                WHERE institution_id = %s
+            """, (institution_id,))
+            
+            cur.execute("COMMIT")
+            
+        except Exception as e:
+            cur.execute("ROLLBACK")
+            print(f"Error during cleanup: {str(e)}")
+            raise
         finally:
             cur.close()
             conn.close()

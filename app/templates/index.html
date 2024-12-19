@@ -536,14 +536,36 @@
                     // Show the fetch button
                     $('#fetch-data-button').show();
 
+                    // Show loading message for data fetch
+                    $('.loading-text').text('Fetching initial financial data...');
+
+                    // Fetch initial financial data
                     try {
-                        // Fetch and update the institution metadata
+                        const fetchResponse = await fetch('/fetch_financial_data', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        });
+
+                        if (!fetchResponse.ok) {
+                            throw new Error('Failed to fetch initial data');
+                        }
+
+                        const fetchData = await fetchResponse.json();
+                        
+                        if (fetchData.needs_reauth) {
+                            $('#results').html('<p>' + fetchData.message + '</p>');
+                            return;
+                        }
+
+                        // Update institution metadata and statistics
                         await updateInstitutionMetadata(data.institution_id);
-                        // Update database statistics
                         await updateDatabaseStatistics();
-                    } catch (metadataError) {
-                        console.error('Error updating metadata:', metadataError);
-                        // Continue even if metadata update fails
+                        
+                    } catch (fetchError) {
+                        console.error('Error fetching initial data:', fetchError);
+                        // Don't throw - we still want to show the institution was linked
                     }
 
                     // Reattach event listeners
