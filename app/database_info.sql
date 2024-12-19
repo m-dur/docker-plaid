@@ -126,27 +126,6 @@ where row_num = 1;
 
 
 
-
--- loan accounts
-CREATE TABLE loan_accounts (
-    account_id VARCHAR(255) PRIMARY KEY REFERENCES accounts(account_id),
-    balance_current DECIMAL(12,2),
-    original_loan_amount DECIMAL(12,2),
-    interest_rate DECIMAL(6,3),
-    pull_date DATE DEFAULT CURRENT_DATE
-);
-
-
-
-
--- Investment Accounts
-CREATE TABLE investment_accounts (
-    account_id VARCHAR(255) PRIMARY KEY REFERENCES accounts(account_id),
-    balance_current DECIMAL(12,2),
-    pull_date DATE DEFAULT CURRENT_DATE
-);
-
-
 -- Category Mappings
 CREATE TABLE category_mappings (
     transaction_name VARCHAR(255) PRIMARY KEY,

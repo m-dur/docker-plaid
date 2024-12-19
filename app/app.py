@@ -156,7 +156,6 @@ def fetch_financial_data():
 def remove_institution(institution_id=None):
     try:
         if institution_id is None:
-            # Get institution_id from request body if not in URL
             data = request.get_json()
             institution_id = data.get('institution_id')
             
@@ -169,12 +168,9 @@ def remove_institution(institution_id=None):
         try:
             cur.execute("BEGIN")
             
-            # Delete cursor FIRST
-            cur.execute("DELETE FROM institution_cursors WHERE institution_id = %s", (institution_id,))
-            
-            # Get access token before deleting
+            # Get access token before deleting (if it exists)
             cur.execute("""
-                SELECT access_token 
+                SELECT access_token, token_id 
                 FROM access_tokens 
                 WHERE institution_id = %s
             """, (institution_id,))
@@ -182,43 +178,44 @@ def remove_institution(institution_id=None):
             
             if result:
                 access_token = result[0]
+                token_id = result[1]
+                
+                # First delete plaid_api_calls records
+                cur.execute("""
+                    DELETE FROM plaid_api_calls 
+                    WHERE access_token_id = %s
+                """, (token_id,))
+
                 try:
                     client = create_plaid_client()
                     plaid_request = ItemRemoveRequest(access_token=access_token)
                     client.item_remove(plaid_request)
                 except Exception as e:
-                    print(f"Error removing item from Plaid: {e}")
-
-            # Rest of the deletion logic remains the same
-            cur.execute("""
-                WITH account_ids AS (
-                    SELECT account_id FROM accounts WHERE institution_id = %s
-                )
-                DELETE FROM transactions WHERE account_id IN (SELECT account_id FROM account_ids)
-            """, (institution_id,))
+                    app.logger.error(f"Error removing item from Plaid: {e}")
             
-            # Delete from plaid_api_calls first
+            # Delete transactions using account_history reference
             cur.execute("""
-                DELETE FROM plaid_api_calls 
-                WHERE access_token_id IN (
-                    SELECT token_id 
-                    FROM access_tokens 
+                DELETE FROM transactions 
+                WHERE account_id IN (
+                    SELECT DISTINCT account_id 
+                    FROM account_history 
                     WHERE institution_id = %s
                 )
             """, (institution_id,))
             
-            # Then delete from other tables
-            for table in ['depository_accounts', 'credit_accounts', 'loan_accounts', 'investment_accounts']:
-                cur.execute(f"""
-                    DELETE FROM {table} 
-                    WHERE account_id IN (
-                        SELECT account_id FROM accounts WHERE institution_id = %s
-                    )
-                """, (institution_id,))
+            # Delete account_history records directly
+            cur.execute("""
+                DELETE FROM account_history 
+                WHERE institution_id = %s
+            """, (institution_id,))
             
-            cur.execute("DELETE FROM accounts WHERE institution_id = %s", (institution_id,))
+            # Delete cursor if exists
             cur.execute("DELETE FROM institution_cursors WHERE institution_id = %s", (institution_id,))
+            
+            # Now we can safely delete access token
             cur.execute("DELETE FROM access_tokens WHERE institution_id = %s", (institution_id,))
+            
+            # Finally delete the institution
             cur.execute("DELETE FROM institutions WHERE id = %s", (institution_id,))
             
             cur.execute("COMMIT")
