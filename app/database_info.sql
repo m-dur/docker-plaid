@@ -208,19 +208,46 @@ CREATE TABLE access_tokens (
 );
 
 -- API Calls
-CREATE TABLE api_calls (
-    id SERIAL PRIMARY KEY,
-    endpoint VARCHAR(255) NOT NULL,
-    method VARCHAR(10) NOT NULL,
-    is_plaid BOOLEAN NOT NULL,
-    called_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    caller_type VARCHAR(50),  -- 'user', 'system', 'webhook', etc.
-    caller_id VARCHAR(100),   -- user_id, system_process_id, etc.
-    response_time FLOAT,      -- in seconds
-    status_code INTEGER,
-    error TEXT,
-    request_payload JSONB,    -- store request parameters
-    response_payload JSONB    -- store response data (if needed)
+
+CREATE TABLE plaid_api_calls (
+    id INTEGER PRIMARY KEY,
+    access_token_id INTEGER,
+    product VARCHAR(255),
+    operation VARCHAR(255),
+    institution_id VARCHAR(255),
+    request_timestamp TIMESTAMP WITHOUT TIME ZONE,
+    response_time_ms INTEGER,
+    error_code VARCHAR(255),
+    error_message TEXT,
+    success BOOLEAN,
+    rate_limit_remaining INTEGER,
+    items_retrieved INTEGER,
+    request_id VARCHAR(255),
+    cursor_used TEXT,
+    next_cursor TEXT,
+    has_more BOOLEAN,
+    batch_number INTEGER,
+    total_batches INTEGER
 );
 
-DELETE FROM plaid_api_calls;
+-- Add investment_accounts view
+CREATE OR REPLACE VIEW investment_accounts AS
+SELECT DISTINCT ON (account_id)
+    account_id,
+    balance_current numeric,
+    pull_date date
+FROM account_history
+WHERE type = 'investment'
+ORDER BY account_id, pull_date DESC;
+
+-- Add loan_accounts view
+CREATE OR REPLACE VIEW loan_accounts AS
+SELECT DISTINCT ON (account_id)
+    account_id,
+    balance_current numeric,
+    original_loan_amount numeric,
+    interest_rate numeric,
+    pull_date date
+FROM account_history
+WHERE type = 'loan'
+ORDER BY account_id, pull_date DESC;
