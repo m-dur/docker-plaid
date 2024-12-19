@@ -539,6 +539,8 @@
                     try {
                         // Fetch and update the institution metadata
                         await updateInstitutionMetadata(data.institution_id);
+                        // Update database statistics
+                        await updateDatabaseStatistics();
                     } catch (metadataError) {
                         console.error('Error updating metadata:', metadataError);
                         // Continue even if metadata update fails
@@ -781,8 +783,18 @@
                         handler.destroy();
                         handler = null;
                     }
-                    // Force a complete page reload from server
-                    window.location.href = window.location.href;
+                    
+                    // Update database statistics first
+                    updateDatabaseStatistics()
+                        .then(() => {
+                            // Then force a complete page reload
+                            window.location.href = window.location.href;
+                        })
+                        .catch(error => {
+                            console.error('Error updating statistics:', error);
+                            // Still reload the page even if statistics update fails
+                            window.location.href = window.location.href;
+                        });
                 },
                 error: function(xhr) {
                     $('.loading-overlay').hide();
@@ -851,41 +863,46 @@
   // Function to update database statistics
   function updateDatabaseStatistics() {
       console.log("Fetching database statistics...");
-      $.ajax({
-          url: '/api/database_statistics',
-          method: 'GET',
-          success: function(statsData) {
-              console.log("Received statistics:", statsData);
-              const tbody = document.querySelector('#database-stats-table tbody');
-              tbody.innerHTML = ''; // Clear existing rows
-              
-              if (statsData.error) {
-                  console.error("Error in statistics:", statsData.error);
-                  tbody.innerHTML = `<tr><td colspan="2">Error: ${statsData.error}</td></tr>`;
-                  return;
+      return new Promise((resolve, reject) => {
+          $.ajax({
+              url: '/api/database_statistics',
+              method: 'GET',
+              success: function(statsData) {
+                  console.log("Received statistics:", statsData);
+                  const tbody = document.querySelector('#database-stats-table tbody');
+                  tbody.innerHTML = ''; // Clear existing rows
+                  
+                  if (statsData.error) {
+                      console.error("Error in statistics:", statsData.error);
+                      tbody.innerHTML = `<tr><td colspan="2">Error: ${statsData.error}</td></tr>`;
+                      reject(statsData.error);
+                      return;
+                  }
+                  
+                  Object.entries(statsData)
+                      .sort(([,a], [,b]) => b - a)
+                      .forEach(([name, count]) => {
+                          const row = document.createElement('tr');
+                          const isView = name.includes('(view)');
+                          const displayName = name.replace(/ \((view|table)\)$/, '').replace(/_/g, ' ');
+                          
+                          row.innerHTML = `
+                              <td class="${isView ? 'view-name' : 'table-name'}">
+                                  ${displayName}${isView ? ' (view)' : ''}
+                              </td>
+                              <td>${count}</td>
+                          `;
+                          tbody.appendChild(row);
+                      });
+                  resolve();
+              },
+              error: function(xhr, status, error) {
+                  console.error("Ajax error:", {xhr, status, error});
+                  const tbody = document.querySelector('#database-stats-table tbody');
+                  tbody.innerHTML = '<tr><td colspan="2">Error loading statistics</td></tr>';
+                  reject(error);
               }
-              
-              Object.entries(statsData)
-                  .sort(([,a], [,b]) => b - a)
-                  .forEach(([name, count]) => {
-                      const row = document.createElement('tr');
-                      const isView = name.includes('(view)');
-                      const displayName = name.replace(/ \((view|table)\)$/, '').replace(/_/g, ' ');
-                      
-                      row.innerHTML = `
-                          <td class="${isView ? 'view-name' : 'table-name'}">
-                              ${displayName}${isView ? ' (view)' : ''}
-                          </td>
-                          <td>${count}</td>
-                      `;
-                      tbody.appendChild(row);
-                  });
-          },
-          error: function(xhr, status, error) {
-              console.error("Ajax error:", {xhr, status, error});
-              const tbody = document.querySelector('#database-stats-table tbody');
-              tbody.innerHTML = '<tr><td colspan="2">Error loading statistics</td></tr>';
-          }
+          });
       });
   }
 
