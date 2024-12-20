@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bank Account Balances</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+        .balance {
+            text-align: right;
+            font-family: monospace;
+        }
+        .date {
+            color: #666;
+            font-size: 0.9em;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .refresh-btn {
+            padding: 8px 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .refresh-btn:hover {
+            background-color: #0056b3;
+        }
+        .total-row {
+            font-weight: bold;
+            background-color: #f8f9fa;
+        }
+        .back-button {
+            background-color: #0A85EA;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+    </style>
+    <script>
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(amount);
+        }
+
+        // Format all balance numbers on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const balanceElements = document.querySelectorAll('.balance');
+            balanceElements.forEach(element => {
+                const rawAmount = parseFloat(element.textContent.replace('$', ''));
+                element.textContent = formatCurrency(rawAmount);
+            });
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Bank Account Balances</h1>
+            <div>
+                <a href="/" class="back-button">Back to Home</a>
+                <button class="refresh-btn" onclick="location.reload()">Refresh</button>
+            </div>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Account</th>
+                    <th>Current Balance</th>
+                    <th>Last Updated</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for account in accounts %}
+                <tr {% if account.account_name == 'Total' %}class="total-row"{% endif %}>
+                    <td>{{ account.account_name }}</td>
+                    <td class="balance">{{ account.balance_current }}</td>
+                    <td class="date">{{ account.pull_date.strftime('%Y-%m-%d') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

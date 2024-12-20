@@ -1070,6 +1070,90 @@ def daily_expenses():
 def daily():
     return render_template('daily.html')
 
+@analytics_bp.route('/bank-balances')
+def bank_balances():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        query = """
+        WITH base AS (
+            SELECT
+                a.account_name,
+                d.balance_current,
+                d.pull_date,
+                0 as sort_order
+            FROM depository_accounts d
+            JOIN accounts a ON d.account_id = a.account_id
+        )
+        SELECT *
+        FROM base
+        UNION ALL
+        SELECT 
+            'Total' as account_name,
+            SUM(balance_current) as balance_current,
+            MAX(pull_date) as pull_date,
+            1 as sort_order
+        FROM base
+        ORDER BY sort_order, account_name;
+        """
+        
+        cur.execute(query)
+        accounts = cur.fetchall()
+        
+        return render_template('bank_balances.html', accounts=accounts)
+        
+    except Exception as e:
+        current_app.logger.error(f"Error in bank_balances: {str(e)}")
+        return render_template('bank_balances.html', accounts=[])
+    finally:
+        cur.close()
+        conn.close()
+
+@analytics_bp.route('/api/bank-balances')
+def get_bank_balances():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        query = """
+        WITH base AS (
+            SELECT
+                a.account_name,
+                d.balance_current as current_balance,
+                d.balance_available as available_balance,
+                d.pull_date
+            FROM depository_accounts d
+            JOIN accounts a ON d.account_id = a.account_id
+        )
+        SELECT *,
+            ROUND(current_balance::numeric, 2) as current_balance,
+            ROUND(available_balance::numeric, 2) as available_balance
+        FROM base
+        UNION ALL
+        SELECT 
+            'Total' as account_name,
+            ROUND(SUM(current_balance)::numeric, 2) as current_balance,
+            ROUND(SUM(available_balance)::numeric, 2) as available_balance,
+            MAX(pull_date) as pull_date
+        FROM base
+        ORDER BY 
+            CASE WHEN account_name = 'Total' THEN 1 ELSE 0 END,
+            account_name;
+        """
+        
+        cur.execute(query)
+        results = cur.fetchall()
+        
+        return jsonify([dict(row) for row in results])
+        
+    except Exception as e:
+        current_app.logger.error(f"Error in get_bank_balances: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
 # Add all other analytics routes from app.py
 # Including:
 # - /api/expenses/monthly
