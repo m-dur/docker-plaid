@@ -1,6 +1,6 @@
 # Financial Data Fetcher
 
-A sophisticated Flask-based application that integrates with Plaid API to fetch, process, analyze, and visualize financial data across multiple institutions.
+A Flask-based application that integrates with Plaid API to fetch, process, analyze, and visualize financial data across multiple institutions.
 
 ## Overview
 
@@ -81,20 +81,14 @@ The application uses a sophisticated database design with:
 
 ## System Architecture
 
-### Component Diagram
-The application follows a modular architecture with:
-- Web Application (Routes, Templates, Schema Generation)
-- Services (Plaid Integration, Data Processing)
-- Financial Data Processing (Handlers, Processors, DB Operations)
-- Storage (PostgreSQL Database)
+### Component Overview
+![Component Overview](http://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/m-dur/plaid-app/main/app/diagrams/summary.puml)
+
+### Detailed Component Diagram
+![Component Diagram](http://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/m-dur/plaid-app/main/app/diagrams/diagram.puml)
 
 ### Database Schema
-Implements a comprehensive schema including:
-- Institution management
-- Account tracking
-- Transaction processing
-- API monitoring
-- Category and group mappings
+![Database Schema](http://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/m-dur/plaid-app/main/app/diagrams/database.puml)
 
 ## Technologies Used
 - Backend: Python/Flask

@@ -109,16 +109,12 @@ AND pull_date = (
 );
 
 
-select account_name
-    , min(balance_current) as min_balance_current
-    , max(balance_current) as max_balance_current
-    , min(balance_limit) as min_balance_limit
-    , max(balance_limit) as max_balance_limit
-    , min(created_at) as min_created_at
-    , max(created_at) as max_created_at
+select *
 from account_history
-group by 1
+where type = 'credit'
 order by 1
+
+
 
 
 
