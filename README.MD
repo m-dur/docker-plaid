@@ -1,91 +1,122 @@
 # Financial Data Fetcher
 
-A robust Flask-based application that integrates with Plaid API to fetch, process, and manage financial data across multiple institutions.
+A sophisticated Flask-based application that integrates with Plaid API to fetch, process, analyze, and visualize financial data across multiple institutions.
 
 ## Overview
 
-This application serves as a financial data aggregator that:
+This application serves as a comprehensive financial data management system that:
 - Connects to multiple banking institutions via Plaid
 - Automatically syncs and categorizes transactions
-- Provides a clean web interface for data visualization
+- Provides detailed financial analysis and visualizations
 - Maintains historical financial records in a PostgreSQL database
+- Offers real-time database statistics and monitoring
 
 ## Technical Architecture
 
 ### Key Components
 1. **Web Application Layer**
-   - Flask backend with dynamic templating
-   - Interactive frontend using jQuery and Plaid Link
-   - Real-time data updates and loading states
+   - Flask backend with modular routing system
+   - Interactive frontend with real-time updates
+   - Dynamic database schema visualization
+   - Comprehensive error handling and loading states
 
-2. **Services Layer**
-   - Plaid API integration for secure bank connections
+2. **Analytics Layer**
+   - Cash flow analysis
+   - Income tracking and analysis
+   - Net income calculations
+   - Daily expense monitoring
+   - Group-based expense categorization
+
+3. **Services Layer**
+   - Plaid API integration
    - Financial data processing pipeline
    - Transaction categorization system
+   - Institution metadata management
 
-3. **Storage Layer**
-   - PostgreSQL database for structured data storage
-   - JSON-based token management
+4. **Storage Layer**
+   - PostgreSQL database with views and materialized tables
+   - API call tracking and monitoring
    - Cursor-based transaction syncing
+   - Token management system
 
 ### Database Schema
 The application uses a sophisticated database design with:
-- Core tables (accounts, transactions)
-- Reference tables (institutions, account_types)
-- Specialized account tables (depository, credit, investment)
-- Category mapping system for transaction classification
+- Core tables (institutions, account_history)
+- View tables (accounts, account type views)
+- Transaction tables & views
+- API tracking (plaid_api_calls)
+- Authentication (access_tokens)
+- Reference tables (category_mappings, group_mappings)
 
 ## Technical Features
 
-- **Security**
-  - Token-based authentication
-  - Secure credential management
-  - No storage of sensitive bank credentials
+- **Financial Analysis**
+  - Cash flow visualization
+  - Income analysis
+  - Net income tracking
+  - Daily expense monitoring
+  - Credit card balance tracking
+  - Bank account balance monitoring
 
 - **Data Processing**
   - Automated transaction categorization
   - Real-time data synchronization
-  - Batch processing capabilities
+  - Group-based transaction mapping
+  - Historical data tracking
 
 - **User Interface**
   - Institution connection management
-  - Transaction viewing and categorization
-  - Database statistics dashboard
+  - Real-time database statistics
+  - Interactive data visualizations
+  - Dynamic schema visualization
   - Loading states and error handling
 
 ## Setup
-1. Copy `.env.example` to `.env` and fill in your credentials
-2. The following files will be created automatically:
-   - `access_tokens.json`: Stores Plaid access tokens
-   - `cursor.json`: Manages Plaid transaction sync cursors
-   - `link_token.json`: Stores Plaid link tokens
-
-Note: These files contain sensitive information and are excluded from git via .gitignore
+1. Configure PostgreSQL database
+2. Copy `.env.example` to `.env` and configure:
+   - Plaid API credentials
+   - Database connection details
+   - Environment settings
+   - Webhook configurations
 
 ## System Architecture
 
 ### Component Diagram
-<img src="docs/images/Financial Data Fetcher Architecture.png" alt="System Architecture Diagram" width="800"/>
+The application follows a modular architecture with:
+- Web Application (Routes, Templates, Schema Generation)
+- Services (Plaid Integration, Data Processing)
+- Financial Data Processing (Handlers, Processors, DB Operations)
+- Storage (PostgreSQL Database)
 
 ### Database Schema
-<img src="docs/images/Financial Database Schema.png" alt="Database Schema" width="800"/>
+Implements a comprehensive schema including:
+- Institution management
+- Account tracking
+- Transaction processing
+- API monitoring
+- Category and group mappings
 
 ## Technologies Used
 - Backend: Python/Flask
 - Database: PostgreSQL
-- Frontend: HTML/CSS/JavaScript
+- Frontend: HTML/CSS/JavaScript/jQuery
 - API Integration: Plaid API
-- Data Processing: Pandas
 - Visualization: PlantUML for diagrams
+- Monitoring: Custom API tracking system
 
-## Goals
-- Provide a unified view of financial data across institutions
-- Automate transaction categorization and analysis
-- Maintain historical financial records
-- Enable easy financial data management and visualization
+## Features
+- Multi-institution support
+- Real-time financial data syncing
+- Comprehensive financial analysis
+- Transaction categorization
+- Group-based expense tracking
+- Database statistics monitoring
+- Schema visualization
+- Historical data tracking
 
 ## Future Enhancements
-- Advanced analytics dashboard
 - Machine learning for transaction categorization
-- Export capabilities for financial planning
-- Multi-user support with role-based access
+- Advanced financial forecasting
+- API performance optimization
+- Enhanced error recovery mechanisms
+- Extended analytics capabilities
