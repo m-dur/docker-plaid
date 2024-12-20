@@ -82,13 +82,13 @@ The application uses a sophisticated database design with:
 ## System Architecture
 
 ### Component Overview
-![Component Overview](http://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/m-dur/plaid-app/main/app/diagrams/summary.puml)
+![Component Overview](https://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/m-dur/plaid-app/main/app/diagrams/summary.puml)
 
 ### Detailed Component Diagram
-![Component Diagram](http://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/m-dur/plaid-app/main/app/diagrams/diagram.puml)
+![Component Diagram](https://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/m-dur/plaid-app/main/app/diagrams/diagram.puml)
 
 ### Database Schema
-![Database Schema](http://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/m-dur/plaid-app/main/app/diagrams/database.puml)
+![Database Schema](https://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/m-dur/plaid-app/main/app/diagrams/database.puml)
 
 ## Technologies Used
 - Backend: Python/Flask
