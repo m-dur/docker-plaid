@@ -11,9 +11,25 @@ skinparam component {
 ' Components
 package "Web Application" {
   [app.py] as App
-  [templates/index.html] as UI
-  [templates/transactions.html] as TransactionsUI
-  [templates/data.html] as DataUI
+  
+  package "Routes" {
+    [data_routes] as DataRoutes
+    [transaction_routes] as TransRoutes
+    [analysis_routes] as AnalysisRoutes
+    [institution_routes] as InstRoutes
+    [api_routes] as APIRoutes
+  }
+  
+  package "Templates" {
+    [templates/index.html] as UI
+    [templates/transactions.html] as TransactionsUI
+    [templates/data.html] as DataUI
+    [templates/cashflow.html] as CashflowUI
+    [templates/income.html] as IncomeUI
+    [templates/net_income.html] as NetIncomeUI
+    [templates/daily_expenses.html] as DailyExpensesUI
+  }
+  
   [db_schema.py] as SchemaGen
 }
 
@@ -27,6 +43,7 @@ package "Services" {
       [accounts_processor] as AccountProcessor
       [institutions_processor] as InstProcessor
       [transactions_processor] as TransProcessor
+      [analysis_processor] as AnalysisProcessor
     }
     
     package "DB Operations" {
@@ -34,6 +51,7 @@ package "Services" {
       [institutions_db] as InstDB
       [transactions_db] as TransDB
       [query_operations] as QueryOps
+      [statistics_operations] as StatsOps
     }
   }
 }
@@ -43,17 +61,17 @@ package "Storage" {
     [accounts]
     [institutions]
     [transactions]
+    [stg_transactions]
     [category_mappings]
-    [account_types]
+    [group_mappings]
+    [account_history]
     [depository_accounts]
     [credit_accounts]
     [investment_accounts]
     [loan_accounts]
-  }
-  
-  database "Files" as Files {
-    [access_tokens.json]
-    [cursor.json]
+    [plaid_api_calls]
+    [institution_cursors]
+    [access_tokens]
   }
 }
 
@@ -62,6 +80,12 @@ package "External Services" {
 }
 
 ' Relationships
+App --> DataRoutes
+App --> TransRoutes
+App --> AnalysisRoutes
+App --> InstRoutes
+App --> APIRoutes
+
 App --> UI : renders
 App --> PlaidService : uses
 App --> DataHandler : orchestrates
@@ -71,6 +95,8 @@ DataHandler --> PlaidService : fetches data
 DataHandler ..> AccountProcessor : processes
 DataHandler ..> InstProcessor : processes
 DataHandler ..> TransProcessor : processes
+DataHandler --> AnalysisProcessor
+DataHandler --> StatsOps
 
 DataHandler --> AccountDB : saves
 DataHandler --> InstDB : saves
@@ -78,7 +104,7 @@ DataHandler --> TransDB : saves
 DataHandler --> QueryOps : executes
 
 PlaidService --> PlaidAPI : makes API calls
-PlaidService --> Files : manages tokens
+PlaidService --> DB : stores tokens & cursors
 AccountDB --> DB : writes
 InstDB --> DB : writes
 TransDB --> DB : writes
@@ -103,10 +129,11 @@ end note
 
 note right of DB
   Database Schema
-  - Core tables (accounts)
-  - Reference tables (institutions, account_types)
-  - Transaction tables
-  - Specialized account tables
+  - Core tables (institutions, account_history)
+  - View tables (accounts, account type views)
+  - Transaction tables & views
+  - API tracking (plaid_api_calls)
+  - Authentication (access_tokens)
 end note
 
 @enduml

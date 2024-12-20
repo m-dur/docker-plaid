@@ -6,17 +6,17 @@
   <link href='https://fonts.googleapis.com/css?family=Roboto' rel='stylesheet'>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@700&display=swap" rel="stylesheet">
   <style>
-    .outer { justify-self: center; margin: 20% auto 120px auto; width: 60%; font-family: 'Roboto', sans-serif; }
+    .outer { justify-self: center; margin: 20% auto 120px auto; width: 60%; font-family: 'Roboto', sans-serif; background-color: rgba(255, 255, 255, 0.5); padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
     a { text-decoration: underline; }
     li { padding-left: 1rem; }
     button { background-color: white; border: 1px solid #0A85EA; color: black; padding: 12px 32px; text-align: center; text-decoration: none; display: inline-block; font-size: 16px; margin: 4px 2px; box-shadow: 0 8px 16px 0 rgba(0,0,0,0.2), 0 6px 20px 0 rgba(0,0,0,0.19); cursor: pointer; }
     #results { margin-top: 20px; border: 1px solid #ddd; padding: 10px; }
     .institutions-list { margin-bottom: 20px; }
     .institution-info { 
-        background: #f5f5f5; 
-        padding: 10px; 
-        margin: 10px 0; 
-        border-radius: 4px; 
+        background: rgba(248, 249, 250, 0.5);
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
     }
     .remove-institution {
         background-color: #ff4444;
@@ -59,7 +59,7 @@
         background-color: #0969c5;
     }
     .schema-container {
-        background: white;
+        background: rgba(255, 255, 255, 0.7);
         border-radius: 8px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         margin: 20px 0;
@@ -120,7 +120,7 @@
         display: flex;
         gap: 2rem;
         padding: 1.5rem;
-        background: white;
+        background: rgba(255, 255, 255, 0.5);
         border-radius: 8px;
         margin-bottom: 1rem;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -128,7 +128,7 @@
 
     .institution-metadata {
         padding: 1rem;
-        background: #f8f9fa;
+        background: rgba(248, 249, 250, 0.5);
         border-radius: 6px;
         min-width: 300px;
     }
@@ -147,12 +147,13 @@
 
     .metadata-item .label {
         font-size: 0.8rem;
-        color: #6c757d;
+        color: #333333;
+        font-weight: 500;
     }
 
     .metadata-item .value {
-        font-weight: 500;
-        color: #212529;
+        font-weight: 600;
+        color: #000000;
     }
 
     .metadata-sections {
@@ -164,7 +165,7 @@
     .account-data {
         flex: 1;
         padding: 1rem;
-        background: #f8f9fa;
+        background: rgba(248, 249, 250, 0.5);
         border-radius: 6px;
     }
     .loading-overlay {
@@ -205,7 +206,7 @@
         position: fixed;
         top: 20px;
         right: 20px;
-        background: white;
+        background: rgba(255, 255, 255, 0.7);
         padding: 1rem;
         border-radius: 8px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -240,7 +241,7 @@
     }
 
     .schema-container {
-        background: white;
+        background: rgba(255, 255, 255, 0.7);
         border-radius: 8px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         margin: 20px 0;
@@ -307,9 +308,31 @@
         font-size: 0.8em;
         margin: 5px 0 0 0;
     }
+
+    body { 
+        background-image: url("{{ url_for('static', filename='mr-krabs-eisnik6gv5pf4bzz.jpg') }}");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+        margin: 0;
+        padding: 0;
+        font-family: 'Roboto', sans-serif;
+    }
+    
+    /* Add some contrast for better readability */
+    .outer {
+        background-color: rgba(255, 255, 255, 0.9);
+        padding: 2rem;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Remove the previous background color */
+    /* body { background-color: #B8B0E5; } */
   </style>
 </head>
-<body style="background-color:#B1EEFC;">
+<body>
   <div class="database-stats">
     <h4>Database Statistics</h4>
     <table class="table-stats" id="database-stats-table">

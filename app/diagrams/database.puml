@@ -139,6 +139,8 @@ class transactions <<transaction>> {
     authorized_datetime: timestamp
     created_at: timestamp
     pull_date: date
+    pending: boolean
+    pending_transaction_id: varchar
 }
 
 class institution_cursors <<transaction>> {
@@ -159,19 +161,25 @@ class access_tokens <<transaction>> {
     last_updated: timestamp
 }
 
-class api_calls <<transaction>> {
-    + id: serial <<PK>>
-    endpoint: varchar
-    method: varchar(10)
-    is_plaid: boolean
-    called_at: timestamp
-    caller_type: varchar(50)
-    caller_id: varchar(100)
-    response_time: float
-    status_code: integer
-    error: text
-    request_payload: jsonb
-    response_payload: jsonb
+class plaid_api_calls <<transaction>> {
+    + id: integer <<PK>>
+    access_token_id: integer
+    product: varchar
+    operation: varchar
+    institution_id: varchar
+    request_timestamp: timestamp
+    response_time_ms: integer
+    error_code: varchar
+    error_message: text
+    success: boolean
+    rate_limit_remaining: integer
+    items_retrieved: integer
+    request_id: varchar
+    cursor_used: text
+    next_cursor: text
+    has_more: boolean
+    batch_number: integer
+    total_batches: integer
 }
 
 ' Relationships
@@ -184,5 +192,7 @@ account_history -[#ffffff]-> loan_accounts
 institutions -[#ffffff]-> institution_cursors
 institutions -[#ffffff]-> access_tokens
 accounts -[#ffffff]-> transactions
+institutions -[#ffffff]-> plaid_api_calls
+transactions -[#ffffff]-> stg_transactions
 
 @enduml
