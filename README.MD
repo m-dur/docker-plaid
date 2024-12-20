@@ -81,14 +81,11 @@ The application uses a sophisticated database design with:
 
 ## System Architecture
 
-### Component Overview
-![Component Overview](app/static/images/diagrams/summary.png)
-
 ### Detailed Component Diagram
-![Component Diagram](app/static/images/diagrams/diagram.png)
+![Component Diagram](app/diagrams/diagram.png)
 
 ### Database Schema
-![Database Schema](app/static/images/diagrams/database.png)
+![Database Schema](app/diagrams/database.png)
 
 ## Technologies Used
 - Backend: Python/Flask
