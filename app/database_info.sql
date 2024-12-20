@@ -31,10 +31,7 @@ CREATE TABLE institutions (
 );
 
 -- Account history
-ALTER TABLE account_history
-ADD COLUMN IF NOT EXISTS last_payment_date DATE,
-ADD COLUMN IF NOT EXISTS last_payment_amount NUMERIC(12,2),
-ADD COLUMN IF NOT EXISTS last_statement_issue_date DATE;
+
 CREATE TABLE account_history (
     history_id SERIAL PRIMARY KEY,
     account_id VARCHAR(255),
@@ -48,7 +45,10 @@ CREATE TABLE account_history (
     balance_current DECIMAL(12,2),
     balance_available DECIMAL(12,2),
     balance_limit DECIMAL(12,2),
+    last_statement_issue_date DATE,
     last_statement_balance DECIMAL(12,2),
+    last_payment_amount DECIMAL(12,2),
+    last_payment_date DATE,
     last_statement_date DATE,
     minimum_payment_amount DECIMAL(12,2),
     next_payment_due_date DATE,
@@ -257,3 +257,4 @@ SELECT DISTINCT ON (account_id)
 FROM account_history
 WHERE type = 'loan'
 ORDER BY account_id, pull_date DESC;
+

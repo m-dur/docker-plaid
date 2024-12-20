@@ -132,12 +132,61 @@ order by 1
 
 select * from account_history;
 
-SELECT 
-    account_name,
-    last_payment_date,
-    last_payment_amount,
-    last_statement_issue_date
+SELECT *
 FROM account_history
 WHERE type = 'credit'
 ORDER BY pull_date DESC
-LIMIT 5;
+
+-- current order
+-- history_id: integer
+-- account_id: character varying
+-- account_name: character varying
+-- institution_id: character varying
+-- type: character varying
+-- subtype: character varying
+-- mask: character varying
+-- verification_status: character varying
+-- currency: character varying
+-- balance_current: numeric
+-- balance_available: numeric
+-- balance_limit: numeric
+-- last_statement_balance: numeric
+-- last_statement_date: date
+-- minimum_payment_amount: numeric
+-- next_payment_due_date: date
+-- apr_percentage: numeric
+-- apr_type: character varying
+-- balance_subject_to_apr: numeric
+-- interest_charge_amount: numeric
+-- created_at: timestamp without time zone
+-- pull_date: date
+-- last_payment_date: date
+-- last_payment_amount: numeric
+-- last_statement_issue_date: date
+
+-- requested order
+-- history_id: integer
+-- account_id: character varying
+-- account_name: character varying
+-- institution_id: character varying
+-- type: character varying
+-- subtype: character varying
+-- mask: character varying
+-- verification_status: character varying
+-- currency: character varying
+-- balance_current: numeric
+-- balance_available: numeric
+-- balance_limit: numeric
+-- last_statement_issue_date: date
+-- last_statement_balance: numeric
+-- last_payment_amount: numeric
+-- last_payment_date: date
+-- last_statement_date: date
+-- minimum_payment_amount: numeric
+-- next_payment_due_date: date
+-- apr_percentage: numeric
+-- apr_type: character varying
+-- balance_subject_to_apr: numeric
+-- interest_charge_amount: numeric
+-- created_at: timestamp without time zone
+-- pull_date: date
