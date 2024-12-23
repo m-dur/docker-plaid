@@ -10,7 +10,9 @@ def ensure_output_directory():
 
 def generate_diagram(puml_file: Path, output_dir: Path):
     """Generate PNG diagram from PlantUML file"""
-    output_file = output_dir / f"{puml_file.stem}.png"
+    # Replace spaces with underscores in the output filename
+    output_filename = puml_file.stem.replace(' ', '_') + '.png'
+    output_file = output_dir / output_filename
     
     try:
         # Run PlantUML command
@@ -21,6 +23,11 @@ def generate_diagram(puml_file: Path, output_dir: Path):
             str(output_dir),
             str(puml_file)
         ], capture_output=True, text=True)
+        
+        # Rename the output file if it exists
+        default_output = output_dir / f"{puml_file.stem}.png"
+        if default_output.exists():
+            default_output.rename(output_file)
         
         if result.returncode == 0:
             print(f"✅ Successfully generated {output_file}")

@@ -82,10 +82,10 @@ The application uses a sophisticated database design with:
 ## System Architecture
 
 ### Detailed Component Diagram
-![Component Diagram](app/diagrams/diagram.png)
+![Component Diagram](app/diagrams/app/static/images/diagrams/Financial_Data_Fetcher_Architecture.png)
 
 ### Database Schema
-![Database Schema](app/diagrams/database.png)
+![Database Schema](app/diagrams/app/static/images/diagrams/Financial_Database_Schema.png)
 
 ## Technologies Used
 - Backend: Python/Flask
