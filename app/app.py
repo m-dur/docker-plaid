@@ -2,7 +2,7 @@ import json
 import plaid
 from flask import Flask, render_template, request, jsonify, session, send_file
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
-from plaid_service import create_and_store_link_token, get_access_token, save_access_token, get_saved_access_tokens, get_institution_info, get_access_token_by_item_id, fire_sandbox_webhook, get_item, create_plaid_client
+from plaid_service import create_and_store_link_token, get_access_token, save_access_token, get_saved_access_tokens, get_institution_info, get_access_token_by_item_id, fire_sandbox_webhook, get_item, create_plaid_client, get_item_details
 from financial_data.handlers.financial_data_handler import FinancialDataHandler
 from db_schema import generate_db_schema
 from financial_data.db_operations.query_operations import execute_query, CustomJSONEncoder
@@ -200,7 +200,7 @@ def remove_institution(institution_id=None):
                     DELETE FROM plaid_api_calls 
                     WHERE access_token_id = %s
                 """, (token_id,))
-            
+
             # Delete transactions
             cur.execute("""
                 DELETE FROM transactions 
@@ -220,8 +220,11 @@ def remove_institution(institution_id=None):
             # Delete cursor
             cur.execute("DELETE FROM institution_cursors WHERE institution_id = %s", (institution_id,))
             
-            # Now delete access token
+            # Delete access token
             cur.execute("DELETE FROM access_tokens WHERE institution_id = %s", (institution_id,))
+            
+            # Delete items record first (before institution)
+            cur.execute("DELETE FROM items WHERE institution_id = %s", (institution_id,))
             
             # Finally delete institution
             cur.execute("DELETE FROM institutions WHERE id = %s", (institution_id,))
@@ -544,16 +547,101 @@ def get_expense_chart_data():
 @app.route('/refresh_financial_data/<institution_id>', methods=['POST'])
 def refresh_financial_data(institution_id):
     try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
         access_token = get_access_token(institution_id)
+        
+        # Get item details first
+        item_response = get_item_details(access_token)
+        if item_response:
+            item_dict = item_response.to_dict()
+            item = item_dict['item']
+            status = item_dict['status']
+            
+            # Insert/Update items table
+            cur.execute("""
+                INSERT INTO items (
+                    item_id,
+                    institution_id,
+                    institution_name,
+                    available_products,
+                    billed_products,
+                    products,
+                    consented_products,
+                    consented_data_scopes,
+                    consented_use_cases,
+                    consent_expiration_time,
+                    created_at,
+                    update_type,
+                    webhook,
+                    error_type,
+                    error_code,
+                    error_message,
+                    transactions_last_successful_update,
+                    transactions_last_failed_update,
+                    last_webhook_received_at
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                ON CONFLICT (item_id) DO UPDATE SET
+                    available_products = EXCLUDED.available_products,
+                    billed_products = EXCLUDED.billed_products,
+                    products = EXCLUDED.products,
+                    consented_products = EXCLUDED.consented_products,
+                    consented_data_scopes = EXCLUDED.consented_data_scopes,
+                    consented_use_cases = EXCLUDED.consented_use_cases,
+                    consent_expiration_time = EXCLUDED.consent_expiration_time,
+                    update_type = EXCLUDED.update_type,
+                    webhook = EXCLUDED.webhook,
+                    error_type = EXCLUDED.error_type,
+                    error_code = EXCLUDED.error_code,
+                    error_message = EXCLUDED.error_message,
+                    transactions_last_successful_update = EXCLUDED.transactions_last_successful_update,
+                    transactions_last_failed_update = EXCLUDED.transactions_last_failed_update,
+                    last_webhook_received_at = EXCLUDED.last_webhook_received_at,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (
+                item['item_id'],
+                institution_id,
+                item['institution_name'],
+                item['available_products'],
+                item['billed_products'],
+                item['products'],
+                item.get('consented_products', []),
+                item.get('consented_data_scopes', []),
+                item.get('consented_use_cases', []),
+                item.get('consent_expiration_time'),
+                item['created_at'],
+                item['update_type'],
+                item['webhook'],
+                item.get('error', {}).get('error_type'),
+                item.get('error', {}).get('error_code'),
+                item.get('error', {}).get('error_message'),
+                status.get('transactions', {}).get('last_successful_update'),
+                status.get('transactions', {}).get('last_failed_update'),
+                status.get('last_webhook')
+            ))
+            conn.commit()
+
+        # Continue with existing financial data processing
         handler = FinancialDataHandler()
         item_info = {
             'institution_id': institution_id,
-            'is_manual_refresh': True  # Add this flag
+            'is_manual_refresh': True
         }
-        result = handler.fetch_and_process_financial_data(access_token, item_info=item_info)
+        result = handler.fetch_and_process_financial_data(access_token, conn, cur, item_info)
         return jsonify(result)
+        
     except Exception as e:
+        if conn:
+            conn.rollback()
         return jsonify({'error': str(e)}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 @app.route('/create_link_token', methods=['GET'])
 def create_new_link_token():
@@ -597,6 +685,36 @@ def get_institutions():
             'success': True,
             'institutions': institutions
         })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/api/item_details/<institution_id>')
+def get_item_details_route(institution_id):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Get access token using institution_id instead of item_id
+        cur.execute("""
+            SELECT access_token 
+            FROM access_tokens 
+            WHERE institution_id = %s
+        """, (institution_id,))
+        result = cur.fetchone()
+        
+        if not result:
+            return jsonify({'error': 'Institution not found'}), 404
+            
+        access_token = result[0]
+        
+        # Get and print item details
+        item_details = get_item_details(access_token)
+        
+        return jsonify({'message': 'Item details printed to terminal'})
+        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:

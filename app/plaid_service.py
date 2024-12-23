@@ -554,3 +554,22 @@ def get_initial_transactions(access_token, start_date=None, end_date=None, retry
     except Exception as e:
         print(f"❌ Error getting initial transactions: {str(e)}")
         raise
+
+@track_plaid_call(product='item', operation='get')
+def get_item_details(access_token):
+    """Get detailed item info from Plaid and print all available fields"""
+    try:
+        client = create_plaid_client()
+        request = ItemGetRequest(access_token=access_token)
+        response = client.item_get(request)
+        
+        # Convert the entire response to a dictionary
+        response_dict = response.to_dict()
+        
+        print("\n=== Item Details ===")
+        print(json.dumps(response_dict, indent=2, default=str))
+        return response
+        
+    except Exception as e:
+        print(f"Error getting item details: {e}")
+        return None

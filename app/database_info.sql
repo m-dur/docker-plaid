@@ -259,3 +259,43 @@ FROM account_history
 WHERE type = 'loan'
 ORDER BY account_id, pull_date DESC;
 
+
+
+CREATE TABLE items (
+    id SERIAL PRIMARY KEY,
+    item_id VARCHAR(255) NOT NULL UNIQUE,
+    institution_id VARCHAR(255) NOT NULL,
+    institution_name VARCHAR(255),
+    available_products TEXT[],
+    billed_products TEXT[],
+    products TEXT[],
+    consented_products TEXT[],
+    consented_data_scopes TEXT[],
+    consented_use_cases TEXT[],
+    consent_expiration_time TIMESTAMP,
+    created_at TIMESTAMP,
+    update_type VARCHAR(50),
+    webhook TEXT,
+    error_type VARCHAR(100),
+    error_code VARCHAR(100),
+    error_message TEXT,
+    transactions_last_successful_update TIMESTAMP,
+    transactions_last_failed_update TIMESTAMP,
+    last_webhook_received_at TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (institution_id) REFERENCES institutions(id)
+);
+
+-- Add trigger to automatically update updated_at
+CREATE OR REPLACE FUNCTION update_items_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_items_updated_at
+    BEFORE UPDATE ON items
+    FOR EACH ROW
+    EXECUTE FUNCTION update_items_updated_at();

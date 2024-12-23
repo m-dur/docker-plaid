@@ -112,7 +112,9 @@ AND pull_date = (
 select *
 from account_history
 where type = 'credit'
-order by 1
+order by 1;
+
+select * from items
 
 
 

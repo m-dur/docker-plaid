@@ -7,7 +7,7 @@ from ..db_operations.reference.institutions_db import save_institutions_to_db
 from plaid_service import (
     get_accounts, get_item, 
     get_institution_info, get_transactions_sync, get_saved_cursor, get_liabilities,
-    save_cursor, create_plaid_client, delete_cursor, get_initial_transactions
+    save_cursor, create_plaid_client, delete_cursor, get_initial_transactions, get_item_details
 )
 from ..processors.core.transactions_processor import process_transactions
 from ..db_operations.core.transactions_db import save_transactions_to_db
@@ -19,6 +19,7 @@ import logging
 from plaid.model.transactions_get_request import TransactionsGetRequest
 import time
 import plaid
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -34,6 +35,7 @@ class FinancialDataHandler:
         # Initialize results dictionary at the start
         results = {
             'success': False,
+            'error': None,
             'transactions': {
                 'db_saved': False,
                 'count': 0,
@@ -50,8 +52,108 @@ class FinancialDataHandler:
             should_close = True
         
         try:
-            print("Debug: Starting financial data processing")
-            print(f"Debug: Initial results state: {results}")
+            # Get item details first
+            print("\n=== Item Details ===")
+            item_response = get_item_details(access_token)
+            
+            if not item_response or not hasattr(item_response, 'item'):
+                raise Exception("Failed to get item details")
+            
+            item = item_response.item
+            status = item_response.status
+            
+            # Get institution info
+            institution_info = get_institution_info(access_token)
+            if not institution_info:
+                raise Exception("Failed to get institution info")
+            
+            # Convert datetime strings to proper format
+            created_at = item.created_at if hasattr(item, 'created_at') else None
+            consent_expiration_time = item.consent_expiration_time if hasattr(item, 'consent_expiration_time') else None
+            
+            # Get transaction status timestamps
+            last_successful_update = status.get('transactions', {}).get('last_successful_update') if status else None
+            last_failed_update = status.get('transactions', {}).get('last_failed_update') if status else None
+            last_webhook = status.get('last_webhook') if status else None
+            
+            # Convert all enum types to lists of strings
+            available_products = [str(p) for p in item.available_products] if item.available_products else []
+            billed_products = [str(p) for p in item.billed_products] if item.billed_products else []
+            products = [str(p) for p in item.products] if item.products else []
+            consented_products = [str(p) for p in item.consented_products] if item.consented_products else []
+            consented_data_scopes = [str(s) for s in item.consented_data_scopes] if item.consented_data_scopes else []
+            consented_use_cases = [str(u) for u in item.consented_use_cases] if item.consented_use_cases else []
+            
+            # Insert/Update items table
+            try:
+                cur.execute("""
+                    INSERT INTO items (
+                        item_id, institution_id, institution_name,
+                        available_products, billed_products, products,
+                        consented_products, consented_data_scopes, consented_use_cases,
+                        consent_expiration_time, created_at, update_type,
+                        webhook, error_type, error_code, error_message,
+                        transactions_last_successful_update,
+                        transactions_last_failed_update,
+                        last_webhook_received_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (item_id) DO UPDATE SET
+                        institution_id = EXCLUDED.institution_id,
+                        institution_name = EXCLUDED.institution_name,
+                        available_products = EXCLUDED.available_products,
+                        billed_products = EXCLUDED.billed_products,
+                        products = EXCLUDED.products,
+                        consented_products = EXCLUDED.consented_products,
+                        consented_data_scopes = EXCLUDED.consented_data_scopes,
+                        consented_use_cases = EXCLUDED.consented_use_cases,
+                        consent_expiration_time = EXCLUDED.consent_expiration_time,
+                        update_type = EXCLUDED.update_type,
+                        webhook = EXCLUDED.webhook,
+                        error_type = EXCLUDED.error_type,
+                        error_code = EXCLUDED.error_code,
+                        error_message = EXCLUDED.error_message,
+                        transactions_last_successful_update = EXCLUDED.transactions_last_successful_update,
+                        transactions_last_failed_update = EXCLUDED.transactions_last_failed_update,
+                        last_webhook_received_at = EXCLUDED.last_webhook_received_at,
+                        updated_at = CURRENT_TIMESTAMP
+                """, (
+                    item.item_id,
+                    institution_info['institution_id'],
+                    item.institution_name,
+                    available_products,
+                    billed_products,
+                    products,
+                    consented_products,
+                    consented_data_scopes,
+                    consented_use_cases,
+                    consent_expiration_time,
+                    created_at,
+                    item.update_type,
+                    item.webhook,
+                    item.error.error_type if item.error else None,
+                    item.error.error_code if item.error else None,
+                    item.error.error_message if item.error else None,
+                    last_successful_update,
+                    last_failed_update,
+                    last_webhook
+                ))
+                conn.commit()
+                print("✓ Successfully inserted/updated item details")
+            except Exception as e:
+                conn.rollback()
+                logger.error(f"Database error: {str(e)}")
+                raise
+            
+            # Continue with rest of processing
+            if not item_info:
+                try:
+                    item_info = get_item(access_token)
+                except Exception as e:
+                    logger.error(f"Error getting item info: {e}")
+                    results['error'] = str(e)
+                    return results
+            
+            print("\n=== Financial Data Processing Debug ===")
             
             # 1. Get institution info first
             if not item_info:
@@ -249,76 +351,9 @@ class FinancialDataHandler:
             return results
             
         except Exception as e:
-            if should_close:
-                cur.execute("ROLLBACK")  # Rollback all changes
-                
-                # Clean up any partial data
-                try:
-                    if item_info:
-                        institution_id = item_info.get('institution_id')
-                    else:
-                        item_info = get_item(access_token)
-                        institution_id = item_info['institution_id']
-                    
-                    current_pull_date = datetime.now().date()
-                    
-                    # Delete only data from current refresh cycle
-                    cur.execute("BEGIN")
-                    
-                    # First delete plaid API calls
-                    cur.execute("""
-                        DELETE FROM plaid_api_calls 
-                        WHERE access_token_id IN (
-                            SELECT token_id 
-                            FROM access_tokens 
-                            WHERE institution_id = %s
-                        )
-                    """, (institution_id,))
-                    
-                    # Then delete transactions from current pull cycle
-                    cur.execute("""
-                        DELETE FROM transactions 
-                        WHERE account_id IN (
-                            SELECT account_id FROM accounts 
-                            WHERE institution_id = %s
-                        ) AND pull_date = %s
-                    """, (institution_id, current_pull_date))
-                    
-                    # Delete account-specific data from current pull cycle
-                    cur.execute("""
-                        DELETE FROM account_history 
-                        WHERE account_id IN (
-                            SELECT DISTINCT ON (account_id) account_id 
-                            FROM account_history
-                            WHERE institution_id = %s 
-                            ORDER BY account_id, pull_date DESC
-                        )
-                        AND pull_date = %s
-                    """, (institution_id, current_pull_date))
-                    
-                    # Delete accounts from current pull cycle
-                    cur.execute("""
-                        DELETE FROM account_history 
-                        WHERE institution_id = %s AND pull_date = %s
-                    """, (institution_id, current_pull_date))
-                    
-                    # For institutions table, only delete if this is the first pull
-                    cur.execute("""
-                        DELETE FROM institutions 
-                        WHERE id = %s 
-                        AND NOT EXISTS (
-                            SELECT 1 FROM accounts 
-                            WHERE institution_id = %s AND pull_date < %s
-                        )
-                    """, (institution_id, institution_id, current_pull_date))
-                    
-                    cur.execute("COMMIT")
-                    
-                except Exception as cleanup_error:
-                    logger.error(f"Error during cleanup: {cleanup_error}")
-                    cur.execute("ROLLBACK")
-                
-            raise e
+            logger.error(f"Error in main processing: {e}")
+            results['error'] = str(e)
+            return results
         finally:
             if should_close and conn:
                 conn.close()

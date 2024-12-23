@@ -971,13 +971,23 @@ def get_balances():
         
         query = """
         WITH base AS (
-            SELECT
-                account_name,
-                balance_current as bal_cur,
-                balance_limit as bal_limit
-            FROM credit_accounts
+            SELECT DISTINCT ON (ca.account_id)
+                ca.account_name,
+                ca.balance_current as bal_cur,
+                ca.balance_limit as bal_limit,
+                ah.institution_id,
+                i.transactions_last_successful_update as last_update
+            FROM credit_accounts ca
+            JOIN account_history ah ON ca.account_id = ah.account_id
+            LEFT JOIN items i ON ah.institution_id = i.institution_id
+            WHERE ah.type = 'credit'
+            ORDER BY ca.account_id, ah.created_at DESC
         )
-        SELECT *,
+        SELECT 
+            account_name,
+            bal_cur,
+            bal_limit,
+            last_update,
             ROUND((bal_cur / NULLIF(bal_limit, 0) * 100)::numeric, 2) as util_rate
         FROM base
         UNION ALL
@@ -985,6 +995,7 @@ def get_balances():
             'Total' as account_name,
             SUM(bal_cur) as bal_cur,
             SUM(bal_limit) as bal_limit,
+            MAX(last_update) as last_update,
             ROUND((SUM(bal_cur) / NULLIF(SUM(bal_limit), 0) * 100)::numeric, 2) as util_rate
         FROM base
         ORDER BY util_rate DESC;

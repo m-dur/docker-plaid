@@ -94,6 +94,12 @@
             font-size: 16px;
             margin-top: 5px;
         }
+        .last-update {
+            color: #888;
+            font-size: 14px;
+            margin-top: 8px;
+            font-style: italic;
+        }
         .total-balance-info {
             color: #666;
             font-size: 20px;
@@ -144,6 +150,19 @@
             }).format(amount);
         }
 
+        function formatDate(dateString) {
+            if (!dateString) return 'Never';
+            
+            const date = new Date(dateString);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            const isOld = date < today;
+            const formattedDate = date.toLocaleString();
+            
+            return `<span style="color: ${isOld ? '#ff4444' : '#888'}">${formattedDate}</span>`;
+        }
+
         fetch('/api/balances')
             .then(response => response.json())
             .then(data => {
@@ -160,6 +179,9 @@
                             <div class="total-balance-info">
                                 ${formatCurrency(account.bal_cur)} / ${formatCurrency(account.bal_limit)}
                             </div>
+                            <div class="last-update">
+                                Last Updated: ${formatDate(account.last_update)}
+                            </div>
                         `;
                         totalContainer.appendChild(totalCard);
                     } else {
@@ -170,6 +192,9 @@
                             ${createProgressRing(account.util_rate)}
                             <div class="balance-info">
                                 ${formatCurrency(account.bal_cur)} / ${formatCurrency(account.bal_limit)}
+                            </div>
+                            <div class="last-update">
+                                Last Updated: ${formatDate(account.last_update)}
                             </div>
                         `;
                         container.appendChild(card);
