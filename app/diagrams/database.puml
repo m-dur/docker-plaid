@@ -19,6 +19,7 @@ skinparam class {
     HeaderBackgroundColor<<transaction>> #0066CC
     HeaderBackgroundColor<<reference>> #006633
     HeaderBackgroundColor<<history>> #CC6600
+    HeaderBackgroundColor<<view>> #808080
 }
 
 ' Core tables
@@ -35,27 +36,54 @@ class institutions <<core>> {
     last_refresh: timestamp
 }
 
+class items <<core>> {
+    + id: serial <<PK>>
+    item_id: varchar <<unique>>
+    institution_id: varchar <<FK>>
+    institution_name: varchar
+    available_products: text[]
+    billed_products: text[]
+    products: text[]
+    consented_products: text[]
+    consented_data_scopes: text[]
+    consented_use_cases: text[]
+    consent_expiration_time: timestamp
+    created_at: timestamp
+    update_type: varchar
+    webhook: text
+    error_type: varchar
+    error_code: varchar
+    error_message: text
+    transactions_last_successful_update: timestamp
+    transactions_last_failed_update: timestamp
+    last_webhook_received_at: timestamp
+    updated_at: timestamp
+}
+
 class account_history <<history>> {
     + history_id: serial <<PK>>
     account_id: varchar
     account_name: varchar
     institution_id: varchar <<FK>>
-    type: varchar(50)
-    subtype: varchar(50)
-    mask: varchar(20)
-    verification_status: varchar(50)
-    currency: varchar(3)
-    balance_current: decimal(12,2)
-    balance_available: decimal(12,2)
-    balance_limit: decimal(12,2)
-    last_statement_balance: decimal(12,2)
+    type: varchar
+    subtype: varchar
+    mask: varchar
+    verification_status: varchar
+    currency: varchar
+    balance_current: decimal
+    balance_available: decimal
+    balance_limit: decimal
+    last_statement_issue_date: date
+    last_statement_balance: decimal
+    last_payment_amount: decimal
+    last_payment_date: date
     last_statement_date: date
-    minimum_payment_amount: decimal(12,2)
+    minimum_payment_amount: decimal
     next_payment_due_date: date
-    apr_percentage: decimal(5,2)
-    apr_type: varchar(50)
-    balance_subject_to_apr: decimal(12,2)
-    interest_charge_amount: decimal(12,2)
+    apr_percentage: decimal
+    apr_type: varchar
+    balance_subject_to_apr: decimal
+    interest_charge_amount: decimal
     created_at: timestamp
     pull_date: date
 }
@@ -75,40 +103,43 @@ class accounts <<view>> {
 
 class depository_accounts <<view>> {
     account_id: varchar
-    balance_current: decimal(12,2)
-    balance_available: decimal(12,2)
+    balance_current: decimal
+    balance_available: decimal
     pull_date: date
 }
 
 class credit_accounts <<view>> {
     account_id: varchar
     account_name: varchar
-    balance_current: decimal(12,2)
-    balance_available: decimal(12,2)
-    balance_limit: decimal(12,2)
-    last_statement_balance: decimal(12,2)
+    balance_current: decimal
+    balance_available: decimal
+    balance_limit: decimal
+    last_statement_balance: decimal
     last_statement_date: date
-    minimum_payment_amount: decimal(12,2)
+    minimum_payment_amount: decimal
     next_payment_due_date: date
-    apr_percentage: decimal(5,2)
-    apr_type: varchar(50)
-    balance_subject_to_apr: decimal(12,2)
-    interest_charge_amount: decimal(12,2)
+    last_payment_date: date
+    last_payment_amount: decimal
+    last_statement_issue_date: date
+    apr_percentage: decimal
+    apr_type: varchar
+    balance_subject_to_apr: decimal
+    interest_charge_amount: decimal
     pull_date: date
     created_at: timestamp
 }
 
 class investment_accounts <<view>> {
     account_id: varchar
-    balance_current: decimal(12,2)
+    balance_current: decimal
     pull_date: date
 }
 
 class loan_accounts <<view>> {
     account_id: varchar
-    balance_current: decimal(12,2)
-    original_loan_amount: decimal(12,2)
-    interest_rate: decimal(6,3)
+    balance_current: decimal
+    original_loan_amount: decimal
+    interest_rate: decimal
     pull_date: date
 }
 
@@ -129,18 +160,32 @@ class group_mappings <<reference>> {
 class transactions <<transaction>> {
     + transaction_id: varchar <<PK>>
     account_id: varchar <<FK>>
-    amount: decimal(12,2)
+    amount: decimal
     date: date
     name: varchar
     category: varchar
     group_name: varchar
     merchant_name: varchar
-    payment_channel: varchar(50)
+    payment_channel: varchar
     authorized_datetime: timestamp
     created_at: timestamp
     pull_date: date
     pending: boolean
     pending_transaction_id: varchar
+}
+
+class stg_transactions <<view>> {
+    transaction_id: varchar
+    account_id: varchar
+    amount: decimal
+    date: date
+    name: varchar
+    merchant_name: varchar
+    category: varchar
+    group_name: varchar
+    payment_channel: varchar
+    authorized_datetime: timestamp
+    pull_date: date
 }
 
 class institution_cursors <<transaction>> {
@@ -149,7 +194,7 @@ class institution_cursors <<transaction>> {
     cursor: text
     first_sync_at: timestamp
     last_sync_at: timestamp
-    sync_status: varchar(50)
+    sync_status: varchar
 }
 
 class access_tokens <<transaction>> {
@@ -183,16 +228,19 @@ class plaid_api_calls <<transaction>> {
 }
 
 ' Relationships
+institutions -[#ffffff]-> items
 institutions -[#ffffff]-> account_history
+institutions -[#ffffff]-> institution_cursors
+institutions -[#ffffff]-> access_tokens
+institutions -[#ffffff]-> plaid_api_calls
+
 account_history -[#ffffff]-> accounts
 account_history -[#ffffff]-> depository_accounts
 account_history -[#ffffff]-> credit_accounts
 account_history -[#ffffff]-> investment_accounts
 account_history -[#ffffff]-> loan_accounts
-institutions -[#ffffff]-> institution_cursors
-institutions -[#ffffff]-> access_tokens
+
 accounts -[#ffffff]-> transactions
-institutions -[#ffffff]-> plaid_api_calls
 transactions -[#ffffff]-> stg_transactions
 
 @enduml
