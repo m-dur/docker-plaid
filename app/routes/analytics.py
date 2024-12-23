@@ -830,7 +830,7 @@ def cashflow_summary():
                 END), 0) as inflow,
                 COALESCE(SUM(CASE 
                     WHEN t.amount > 0 
-                    AND (t.name ILIKE '%%External Withdrawal%%' or t.name ILIKE '%%Check%%')
+                    AND (t.name ILIKE '%%External Withdrawal%%' or t.name ilike '%%Zelle To ZIQI%%' or t.name ILIKE '%%Check%%')
                     AND t.name not ilike '%%MONEYLINE%%'
                     AND t.name not ilike '%%WF%%'
                     THEN t.amount 
@@ -907,7 +907,7 @@ def cashflow_summary():
                     END as inflow,
                     CASE 
                         WHEN amount > 0 
-                        AND (name ILIKE '%%External Withdrawal%%' or name ILIKE '%%Check%%')
+                        AND (name ILIKE '%%External Withdrawal%%' or name ilike '%%Zelle To ZIQI%%' or name ILIKE '%%Check%%')
                         AND name not ilike '%%MONEYLINE%%'
                         AND name not ilike '%%WF%%'
                         THEN amount
@@ -935,6 +935,41 @@ def cashflow_summary():
                 'amount': float(row[3] if row[3] > 0 else -row[4])
             } for row in cur.fetchall()]
             
+            # Add this query right after the transactions_query (around line 928)
+            summary_query = """
+            WITH cash_flows AS (
+                SELECT 
+                    name as description,
+                    CASE 
+                        WHEN amount > 0 
+                        AND (name ILIKE '%%External Withdrawal%%' or name ilike '%%Zelle To ZIQI%%' or name ILIKE '%%Check%%')
+                        AND name not ilike '%%MONEYLINE%%'
+                        AND name not ilike '%%WF%%'
+                        THEN amount
+                        ELSE 0 
+                    END as outflow
+                FROM stg_transactions 
+                WHERE date BETWEEN %s AND %s
+            )
+            SELECT 
+                description,
+                SUM(outflow) as total_outflow,
+                COUNT(*) as transaction_count,
+                ROUND(AVG(outflow), 2) as avg_outflow
+            FROM cash_flows
+            WHERE outflow > 0
+            GROUP BY description
+            ORDER BY total_outflow DESC;
+            """
+            
+            cur.execute(summary_query, (start_date, end_date))
+            outflow_summary = [{
+                'description': row[0],
+                'total': float(row[1]),
+                'count': row[2],
+                'average': float(row[3])
+            } for row in cur.fetchall()]
+            
             return jsonify({
                 'total_cash_in': total_cash_in,
                 'total_cash_out': total_cash_out,
@@ -943,7 +978,8 @@ def cashflow_summary():
                 'cash_in': cash_in,
                 'cash_out': cash_out,
                 'net_flow': net_flow,
-                'transactions': transactions
+                'transactions': transactions,
+                'outflow_summary': outflow_summary
             })
             
         except Exception as e:

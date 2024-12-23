@@ -187,6 +187,23 @@
                     </tbody>
                 </table>
             </div>
+
+            <div class="table-container" style="margin-top: 20px;">
+                <h2>Outflow Summary</h2>
+                <table id="outflow-summary-table" class="flow-table">
+                    <thead>
+                        <tr>
+                            <th>Description</th>
+                            <th>Total Amount</th>
+                            <th>Average Amount</th>
+                            <th>Count</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Will be populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -372,6 +389,34 @@
                                 { className: 'dt-body-right' }  // Amount
                             ]
                         });
+
+                        // Add summary table
+                        if (data.outflow_summary) {
+                            $('#outflow-summary-table tbody').empty();
+                            
+                            data.outflow_summary.forEach(summary => {
+                                const row = `
+                                    <tr>
+                                        <td>${summary.description}</td>
+                                        <td class="amount negative">${formatCurrency(summary.total)}</td>
+                                        <td class="amount negative">${formatCurrency(summary.average)}</td>
+                                        <td>${summary.count}</td>
+                                    </tr>
+                                `;
+                                $('#outflow-summary-table tbody').append(row);
+                            });
+
+                            $('#outflow-summary-table').DataTable({
+                                order: [[1, 'desc']],
+                                pageLength: 10,
+                                columns: [
+                                    { className: 'dt-body-left' },   // Description
+                                    { className: 'dt-body-right' },  // Total Amount
+                                    { className: 'dt-body-right' },  // Average Amount
+                                    { className: 'dt-body-right' }   // Count
+                                ]
+                            });
+                        }
                     },
                     error: function(xhr, status, error) {
                         console.error('Error fetching cash flow data:', error);
