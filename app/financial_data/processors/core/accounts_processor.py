@@ -31,7 +31,7 @@ def process_accounts(accounts, bank_balances, credit_cards, additional_fields=No
             'apr_type': credit_data.aprs[0].apr_type if credit_data and credit_data.aprs else None,
             'balance_subject_to_apr': float(credit_data.aprs[0].balance_subject_to_apr) if credit_data and credit_data.aprs and credit_data.aprs[0].balance_subject_to_apr else None,
             'interest_charge_amount': float(credit_data.aprs[0].interest_charge_amount) if credit_data and credit_data.aprs and credit_data.aprs[0].interest_charge_amount else None,
-            'pull_date': datetime.now().date()
+            'pull_date': datetime.now()
         }
         base_data.append(account_data)
     

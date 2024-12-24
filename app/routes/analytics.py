@@ -1128,10 +1128,11 @@ def bank_balances():
             SELECT
                 a.account_name,
                 d.balance_current,
-                d.pull_date,
+                i.transactions_last_successful_update,
                 0 as sort_order
             FROM depository_accounts d
             JOIN accounts a ON d.account_id = a.account_id
+            JOIN items i ON a.institution_id = i.institution_id
         )
         SELECT *
         FROM base
@@ -1139,7 +1140,7 @@ def bank_balances():
         SELECT 
             'Total' as account_name,
             SUM(balance_current) as balance_current,
-            MAX(pull_date) as pull_date,
+            MAX(transactions_last_successful_update) as transactions_last_successful_update,
             1 as sort_order
         FROM base
         ORDER BY sort_order, account_name;

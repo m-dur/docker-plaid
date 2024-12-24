@@ -57,7 +57,7 @@ CREATE TABLE account_history (
     balance_subject_to_apr DECIMAL(12,2),
     interest_charge_amount DECIMAL(12,2),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    pull_date DATE DEFAULT CURRENT_DATE
+    pull_date DATE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Current accounts view
@@ -299,3 +299,5 @@ CREATE TRIGGER update_items_updated_at
     BEFORE UPDATE ON items
     FOR EACH ROW
     EXECUTE FUNCTION update_items_updated_at();
+
+

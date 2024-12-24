@@ -81,12 +81,42 @@
             }).format(amount);
         }
 
-        // Format all balance numbers on page load
+        function formatDate(dateString) {
+            if (!dateString) return 'Never';
+            
+            const date = new Date(dateString);
+            const now = new Date();
+            const diffMs = now - date;
+            
+            // Convert to hours and minutes
+            const hours = Math.floor(diffMs / (1000 * 60 * 60));
+            const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+            
+            let timeAgo = '';
+            if (hours > 0) {
+                timeAgo += `${hours} hour${hours !== 1 ? 's' : ''} `;
+            }
+            if (minutes > 0 || hours === 0) {
+                timeAgo += `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+            }
+            
+            const isOld = diffMs > (24 * 60 * 60 * 1000); // More than 24 hours
+            return `<span style="color: ${isOld ? '#ff4444' : '#888'}">${timeAgo} ago</span>`;
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
+            // Format balances
             const balanceElements = document.querySelectorAll('.balance');
             balanceElements.forEach(element => {
                 const rawAmount = parseFloat(element.textContent.replace('$', ''));
                 element.textContent = formatCurrency(rawAmount);
+            });
+
+            // Format dates
+            const dateElements = document.querySelectorAll('.date');
+            dateElements.forEach(element => {
+                const dateString = element.getAttribute('data-date');
+                element.innerHTML = formatDate(dateString);
             });
         });
     </script>
@@ -113,7 +143,9 @@
                 <tr {% if account.account_name == 'Total' %}class="total-row"{% endif %}>
                     <td>{{ account.account_name }}</td>
                     <td class="balance">{{ account.balance_current }}</td>
-                    <td class="date">{{ account.pull_date.strftime('%Y-%m-%d') }}</td>
+                    <td class="date" data-date="{{ account.transactions_last_successful_update }}">
+                        {{ account.transactions_last_successful_update.strftime('%Y-%m-%d %H:%M:%S') if account.transactions_last_successful_update else 'Never' }}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
