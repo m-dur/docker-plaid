@@ -18,6 +18,8 @@ package "Web Application" {
     [analysis_routes] as AnalysisRoutes
     [institution_routes] as InstRoutes
     [api_routes] as APIRoutes
+    [analytics_routes] as AnalyticsRoutes
+    [expenses_routes] as ExpensesRoutes
   }
   
   package "Templates" {
@@ -28,9 +30,12 @@ package "Web Application" {
     [templates/income.html] as IncomeUI
     [templates/net_income.html] as NetIncomeUI
     [templates/daily_expenses.html] as DailyExpensesUI
+    [templates/expenses.html] as ExpensesUI
+    [templates/expenses_group.html] as ExpensesGroupUI
   }
   
   [db_schema.py] as SchemaGen
+  [convert_diagrams.py] as DiagramGen
 }
 
 package "Services" {
@@ -44,31 +49,31 @@ package "Services" {
       [institutions_processor] as InstProcessor
       [transactions_processor] as TransProcessor
       [analysis_processor] as AnalysisProcessor
-    }
-    
-    package "DB Operations" {
-      [accounts_db] as AccountDB
-      [institutions_db] as InstDB
-      [transactions_db] as TransDB
-      [query_operations] as QueryOps
-      [statistics_operations] as StatsOps
+      [expenses_processor] as ExpensesProcessor
     }
   }
 }
 
-package "Storage" {
-  database "PostgreSQL" as DB {
-    [accounts]
+database "PostgreSQL" as DB {
+  package "Core Tables" {
     [institutions]
-    [transactions]
-    [stg_transactions]
-    [category_mappings]
-    [group_mappings]
     [account_history]
+    [items]
+  }
+  package "Views" {
+    [accounts]
     [depository_accounts]
     [credit_accounts]
     [investment_accounts]
     [loan_accounts]
+    [stg_transactions]
+  }
+  package "Transaction Tables" {
+    [transactions]
+    [category_mappings]
+    [group_mappings]
+  }
+  package "API Tables" {
     [plaid_api_calls]
     [institution_cursors]
     [access_tokens]
@@ -80,35 +85,29 @@ package "External Services" {
 }
 
 ' Relationships
-App --> DataRoutes
-App --> TransRoutes
-App --> AnalysisRoutes
-App --> InstRoutes
-App --> APIRoutes
+App -down-> DataRoutes
+App -down-> TransRoutes
+App -down-> AnalysisRoutes
+App -down-> InstRoutes
+App -down-> APIRoutes
+App -down-> AnalyticsRoutes
+App -down-> ExpensesRoutes
 
-App --> UI : renders
-App --> PlaidService : uses
-App --> DataHandler : orchestrates
-App --> SchemaGen : generates DB diagram
+App -down-> UI : renders
+App -down-> PlaidService : uses
+App -down-> DataHandler : orchestrates
+App -down-> SchemaGen : generates
+App -down-> DiagramGen : generates
 
-DataHandler --> PlaidService : fetches data
-DataHandler ..> AccountProcessor : processes
-DataHandler ..> InstProcessor : processes
-DataHandler ..> TransProcessor : processes
-DataHandler --> AnalysisProcessor
-DataHandler --> StatsOps
+DataHandler -down-> PlaidService : fetches data
+DataHandler -down-> AccountProcessor : processes
+DataHandler -down-> InstProcessor : processes
+DataHandler -down-> TransProcessor : processes
+DataHandler -down-> AnalysisProcessor : processes
+DataHandler -down-> ExpensesProcessor : processes
 
-DataHandler --> AccountDB : saves
-DataHandler --> InstDB : saves
-DataHandler --> TransDB : saves
-DataHandler --> QueryOps : executes
-
-PlaidService --> PlaidAPI : makes API calls
-PlaidService --> DB : stores tokens & cursors
-AccountDB --> DB : writes
-InstDB --> DB : writes
-TransDB --> DB : writes
-QueryOps --> DB : queries
+PlaidService -down-> PlaidAPI : makes API calls
+PlaidService -down-> DB : stores tokens
 
 ' Notes
 note right of DataHandler
@@ -125,15 +124,6 @@ note right of PlaidService
   - Handles API responses
   - Syncs transactions
   - Manages cursors
-end note
-
-note right of DB
-  Database Schema
-  - Core tables (institutions, account_history)
-  - View tables (accounts, account type views)
-  - Transaction tables & views
-  - API tracking (plaid_api_calls)
-  - Authentication (access_tokens)
 end note
 
 @enduml

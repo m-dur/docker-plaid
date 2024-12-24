@@ -99,6 +99,7 @@
             font-size: 14px;
             margin-top: 8px;
             font-style: italic;
+            line-height: 3.0;
         }
         .total-balance-info {
             color: #666;
@@ -150,17 +151,45 @@
             }).format(amount);
         }
 
-        function formatDate(dateString) {
+        function formatDate(dateString, isLastUpdate = false) {
             if (!dateString) return 'Never';
             
             const date = new Date(dateString);
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
             
-            const isOld = date < today;
-            const formattedDate = date.toLocaleString();
+            if (isLastUpdate) {
+                const now = new Date();
+                const diffMs = now - date;
+                
+                // Convert to hours and minutes
+                const hours = Math.floor(diffMs / (1000 * 60 * 60));
+                const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                
+                let timeAgo = '';
+                if (hours > 0) {
+                    timeAgo += `${hours} hour${hours !== 1 ? 's' : ''} `;
+                }
+                if (minutes > 0 || hours === 0) {
+                    timeAgo += `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+                }
+                
+                const isOld = diffMs > (24 * 60 * 60 * 1000); // More than 24 hours
+                return `<span style="color: ${isOld ? '#ff4444' : '#888'}">${timeAgo} ago</span>`;
+            }
             
-            return `<span style="color: ${isOld ? '#ff4444' : '#888'}">${formattedDate}</span>`;
+            // For next payment date, calculate days remaining
+            const now = new Date();
+            now.setHours(0, 0, 0, 0); // Reset time portion for accurate day calculation
+            const paymentDate = new Date(date);
+            paymentDate.setHours(0, 0, 0, 0);
+            
+            const diffTime = paymentDate - now;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            const daysText = diffDays === 0 ? 'today' : 
+                            diffDays === 1 ? '(1 day)' :
+                            diffDays === -1 ? '(-1 day)' :
+                            `(${diffDays} days)`;
+            
+            return `${date.toLocaleDateString()} ${daysText}`;
         }
 
         fetch('/api/balances')
@@ -194,7 +223,10 @@
                                 ${formatCurrency(account.bal_cur)} / ${formatCurrency(account.bal_limit)}
                             </div>
                             <div class="last-update">
-                                Last Updated: ${formatDate(account.last_update)}
+                                Last Updated: ${formatDate(account.last_update, true)}
+                                ${account.next_payment_due_date ? 
+                                    `<br>Next Payment Due: ${formatDate(account.next_payment_due_date, false)}` : 
+                                    ''}
                             </div>
                         `;
                         container.appendChild(card);

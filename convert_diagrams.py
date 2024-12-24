@@ -8,10 +8,19 @@ def ensure_output_directory():
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
 
+def sanitize_filename(filename: str) -> str:
+    """Convert spaces to underscores and ensure clean filename"""
+    # Replace spaces and any other unwanted characters with underscores
+    clean_name = filename.replace(' ', '_')
+    # Remove any duplicate underscores
+    while '__' in clean_name:
+        clean_name = clean_name.replace('__', '_')
+    return clean_name
+
 def generate_diagram(puml_file: Path, output_dir: Path):
     """Generate PNG diagram from PlantUML file"""
-    # Replace spaces with underscores in the output filename
-    output_filename = puml_file.stem.replace(' ', '_') + '.png'
+    # Sanitize the output filename
+    output_filename = sanitize_filename(puml_file.stem) + '.png'
     output_file = output_dir / output_filename
     
     try:
