@@ -24,6 +24,7 @@ from routes.transactions import transactions_bp
 import logging
 import threading
 import time
+from psycopg2.extensions import AsIs
 
 # Then create the Flask app
 app = Flask(__name__)
@@ -414,13 +415,16 @@ def get_institution_metadata(institution_id):
     cur = conn.cursor()
     
     try:
-        # Get institution details
+        # Get institution details and item count
         cur.execute("""
             SELECT 
-                last_refresh,
-                created_at as connected_on
-            FROM institutions 
-            WHERE id = %s
+                i.last_refresh,
+                i.created_at as connected_on,
+                COUNT(DISTINCT it.item_id) as item_count
+            FROM institutions i
+            LEFT JOIN items it ON i.id = it.institution_id
+            WHERE i.id = %s
+            GROUP BY i.last_refresh, i.created_at
         """, (institution_id,))
         inst_data = cur.fetchone()
         
@@ -463,6 +467,7 @@ def get_institution_metadata(institution_id):
             'last_refresh': inst_data[0].isoformat() if inst_data and inst_data[0] else None,
             'connected_on': inst_data[1].isoformat() if inst_data and inst_data[1] else None,
             'new_transactions': new_transactions,
+            'item_count': inst_data[2],
             'account_count': counts[0],
             'transaction_count': counts[1],
             'uncategorized_count': counts[2] if counts[2] else 0
@@ -498,29 +503,19 @@ def get_database_statistics():
         stats = {}
         
         for schema, name, rel_type in results:
-            if rel_type == 'r':  # Table
-                # Use pg_stat_get_live_tuples for tables
-                cur.execute(f"""
-                    SELECT pg_stat_get_live_tuples(c.oid)
-                    FROM pg_class c
-                    JOIN pg_namespace n ON n.oid = c.relnamespace
-                    WHERE n.nspname = 'public' AND c.relname = %s
-                """, (name,))
+            try:
+                # Use COUNT(*) for both tables and views
+                cur.execute(f"SELECT COUNT(*) FROM {name}")
                 count = cur.fetchone()[0]
-            else:  # View
-                # Use COUNT(*) for views
-                try:
-                    cur.execute(f"SELECT COUNT(*) FROM {name}")
-                    count = cur.fetchone()[0]
-                except Exception as e:
-                    print(f"Error counting view {name}: {e}")
-                    count = 0
+            except Exception as e:
+                print(f"Error counting {name}: {e}")
+                count = 0
             
             # Create more user-friendly display name
             display_name = name
             if rel_type == 'v':
                 display_name += ' (view)'
-                
+            
             stats[display_name] = count
         
         # Sort by count in descending order

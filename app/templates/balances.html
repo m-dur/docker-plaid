@@ -198,39 +198,47 @@
                 const container = document.getElementById('cards-container');
                 const totalContainer = document.getElementById('total-container');
                 
-                data.forEach(account => {
-                    if (account.account_name === 'Total') {
-                        const totalCard = document.createElement('div');
-                        totalCard.className = 'total-card';
-                        totalCard.innerHTML = `
-                            <h2>Total Credit Utilization</h2>
-                            ${createProgressRing(account.util_rate, true)}
-                            <div class="total-balance-info">
-                                ${formatCurrency(account.bal_cur)} / ${formatCurrency(account.bal_limit)}
-                            </div>
-                            <div class="last-update">
-                                Last Updated: ${formatDate(account.last_update)}
-                            </div>
-                        `;
-                        totalContainer.appendChild(totalCard);
-                    } else {
-                        const card = document.createElement('div');
-                        card.className = 'card';
-                        card.innerHTML = `
-                            <h2>${account.account_name}</h2>
-                            ${createProgressRing(account.util_rate)}
-                            <div class="balance-info">
-                                ${formatCurrency(account.bal_cur)} / ${formatCurrency(account.bal_limit)}
-                            </div>
-                            <div class="last-update">
-                                Last Updated: ${formatDate(account.last_update, true)}
-                                ${account.next_payment_due_date ? 
-                                    `<br>Next Payment Due: ${formatDate(account.next_payment_due_date, false)}` : 
-                                    ''}
-                            </div>
-                        `;
-                        container.appendChild(card);
-                    }
+                // Separate total and individual accounts
+                const totalAccount = data.find(account => account.account_name === 'Total');
+                const individualAccounts = data
+                    .filter(account => account.account_name !== 'Total')
+                    .sort((a, b) => b.bal_cur - a.bal_cur); // Sort by current balance descending
+                
+                // Handle total card first
+                if (totalAccount) {
+                    const totalCard = document.createElement('div');
+                    totalCard.className = 'total-card';
+                    totalCard.innerHTML = `
+                        <h2>Total Credit Utilization</h2>
+                        ${createProgressRing(totalAccount.util_rate, true)}
+                        <div class="total-balance-info">
+                            ${formatCurrency(totalAccount.bal_cur)} / ${formatCurrency(totalAccount.bal_limit)}
+                        </div>
+                        <div class="last-update">
+                            Last Updated: ${formatDate(totalAccount.last_update)}
+                        </div>
+                    `;
+                    totalContainer.appendChild(totalCard);
+                }
+
+                // Handle individual cards in sorted order
+                individualAccounts.forEach(account => {
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    card.innerHTML = `
+                        <h2>${account.account_name}</h2>
+                        ${createProgressRing(account.util_rate)}
+                        <div class="balance-info">
+                            ${formatCurrency(account.bal_cur)} / ${formatCurrency(account.bal_limit)}
+                        </div>
+                        <div class="last-update">
+                            Last Updated: ${formatDate(account.last_update, true)}
+                            ${account.next_payment_due_date ? 
+                                `<br>Next Payment Due: ${formatDate(account.next_payment_due_date, false)}` : 
+                                ''}
+                        </div>
+                    `;
+                    container.appendChild(card);
                 });
             });
     </script>

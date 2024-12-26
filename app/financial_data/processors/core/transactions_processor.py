@@ -47,7 +47,9 @@ def process_transactions(transactions_data):
                     'group_name': mapped_group or None,
                     'payment_channel': str(transaction.payment_channel).lower() if hasattr(transaction, 'payment_channel') and transaction.payment_channel else None,
                     'authorized_datetime': pd.to_datetime(transaction.authorized_datetime).to_pydatetime() if hasattr(transaction, 'authorized_datetime') and transaction.authorized_datetime else None,
-                    'pull_date': datetime.now().date()
+                    'pull_date': datetime.now().date(),
+                    'pending': getattr(transaction, 'pending', False),
+                    'pending_transaction_id': getattr(transaction, 'pending_transaction_id', None)
                 }
                 transaction_records.append(transaction_record)
                 

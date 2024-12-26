@@ -30,23 +30,28 @@ def save_transactions_to_db(transactions_df, conn=None, cur=None):
                 axis=1
             )
             
-            execute_values(cur, """
-                INSERT INTO transactions 
-                (transaction_id, account_id, amount, date, name, category,
-                merchant_name, group_name, payment_channel, authorized_datetime, pull_date)
-                VALUES %s
+            query = """
+                INSERT INTO transactions (
+                    transaction_id, account_id, amount, date, name, 
+                    merchant_name, category, group_name, payment_channel, 
+                    authorized_datetime, pending, pending_transaction_id, pull_date
+                ) VALUES %s
                 ON CONFLICT (transaction_id) DO UPDATE SET
+                    account_id = EXCLUDED.account_id,
                     amount = EXCLUDED.amount,
                     date = EXCLUDED.date,
                     name = EXCLUDED.name,
+                    merchant_name = EXCLUDED.merchant_name,
                     category = EXCLUDED.category,
                     group_name = EXCLUDED.group_name,
-                    merchant_name = EXCLUDED.merchant_name,
                     payment_channel = EXCLUDED.payment_channel,
                     authorized_datetime = EXCLUDED.authorized_datetime,
+                    pending = EXCLUDED.pending,
+                    pending_transaction_id = EXCLUDED.pending_transaction_id,
                     pull_date = EXCLUDED.pull_date
-                RETURNING transaction_id
-            """, [tuple(x) for x in transactions_df['transactions'].values])
+            """
+            
+            execute_values(cur, query, [tuple(x) for x in transactions_df['transactions'].values])
             
             saved = cur.fetchall()
             return len(saved)

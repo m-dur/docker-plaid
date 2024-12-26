@@ -127,6 +127,18 @@
             min-width: 100px;
             white-space: nowrap;
         }
+
+        .flow-table td:nth-child(2) {  /* Description column */
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .flow-table td:hover {
+            white-space: normal;
+            word-wrap: break-word;
+        }
     </style>
 </head>
 <body>
@@ -379,14 +391,24 @@
                                 { 
                                     className: 'dt-body-left',
                                     type: 'date',
+                                    width: '100px',
                                     render: function(data) {
                                         const date = new Date(data);
                                         return date.toISOString().split('T')[0];
                                     }
                                 },
-                                { className: 'dt-body-left' },  // Description
-                                { className: 'dt-body-left' },  // Category
-                                { className: 'dt-body-right' }  // Amount
+                                { 
+                                    className: 'dt-body-left',
+                                    width: '300px'
+                                },  // Description
+                                { 
+                                    className: 'dt-body-left',
+                                    width: '150px'
+                                },  // Category
+                                { 
+                                    className: 'dt-body-right',
+                                    width: '100px'
+                                }   // Amount
                             ]
                         });
 

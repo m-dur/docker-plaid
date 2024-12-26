@@ -385,6 +385,10 @@
                             <span class="label">Connected On</span>
                             <span class="value" id="connected-on-{{ institution.id }}">Loading...</span>
                         </div>
+                        <div class="metadata-item">
+                            <span class="label">Connected Items</span>
+                            <span class="value" id="item-count-{{ institution.id }}">Loading...</span>
+                        </div>
                     </div>
                 </div>
                 <div class="account-data" id="account-data-{{ institution.id }}">
@@ -532,6 +536,10 @@
                                             <span class="label">Connected On</span>
                                             <span class="value" id="connected-on-${data.institution_id}">${new Date().toLocaleString()}</span>
                                         </div>
+                                        <div class="metadata-item">
+                                            <span class="label">Connected Items</span>
+                                            <span class="value" id="item-count-${data.institution_id}">0</span>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="account-data" id="account-data-${data.institution_id}">
@@ -638,6 +646,7 @@
                 'last-refresh': data.last_refresh ? new Date(data.last_refresh).toLocaleString() : 'Never',
                 'last-credit': `${data.new_transactions} new transactions`,
                 'connected-on': data.connected_on ? new Date(data.connected_on).toLocaleString() : 'Never',
+                'item-count': data.item_count || 0,
                 'account-count': data.account_count || 0,
                 'transaction-count': data.transaction_count || 0,
                 'uncategorized-count': data.uncategorized_count || 0
@@ -880,6 +889,10 @@
               document.getElementById(`connected-on-${institutionId}`).textContent = 
                   data.connected_on ? new Date(data.connected_on).toLocaleString() : 'Never';
                 
+              // Update item count
+              document.getElementById(`item-count-${institutionId}`).textContent = 
+                  data.item_count || 0;
+                
               // Update account data
               document.getElementById(`account-count-${institutionId}`).textContent = 
                   data.account_count;
@@ -891,7 +904,7 @@
           .catch(error => {
               console.error('Error:', error);
               ['last-transaction', 'last-refresh', 'last-credit', 'connected-on',
-               'account-count', 'transaction-count', 'uncategorized-count'].forEach(field => {
+               'item-count', 'account-count', 'transaction-count', 'uncategorized-count'].forEach(field => {
                   document.getElementById(`${field}-${institutionId}`).textContent = 'Error';
               });
           });
