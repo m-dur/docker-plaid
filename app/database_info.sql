@@ -164,12 +164,36 @@ CREATE TABLE transactions (
     pull_date DATE DEFAULT CURRENT_DATE
 );
 
-CREATE OR REPLACE VIEW stg_transactions AS
+drop view stg_transactions;
+CREATE OR REPLACE VIEW stg_transactions AS 
+WITH transaction_groups AS (
+    SELECT 
+        transaction_id,
+        account_id,
+        amount,
+        "date",
+        name,
+        merchant_name,
+        category,
+        group_name,
+        payment_channel,
+        authorized_datetime,
+        pull_date,
+        (MAX("date") OVER (PARTITION BY account_id, amount, name) - 
+         MIN("date") OVER (PARTITION BY account_id, amount, name)) as date_diff,
+        ROW_NUMBER() OVER (
+            PARTITION BY account_id, amount, name 
+            ORDER BY "date"
+        ) as row_num
+    FROM transactions
+    WHERE pending = FALSE 
+    AND (pending_transaction_id IS NULL OR pending_transaction_id = '')
+)
 SELECT 
     transaction_id,
     account_id,
     amount,
-    date,
+    "date",
     name,
     merchant_name,
     category,
@@ -177,9 +201,13 @@ SELECT
     payment_channel,
     authorized_datetime,
     pull_date
-FROM transactions 
-WHERE pending = FALSE 
-AND (pending_transaction_id IS NULL OR pending_transaction_id = '');
+FROM transaction_groups
+WHERE 
+    -- Keep rows that aren't part of a duplicate group within 3 days
+    (date_diff > 3 OR date_diff IS NULL)
+    OR 
+    -- For duplicate groups within 3 days, keep only the first occurrence
+    (date_diff <= 3 AND row_num = 1);
 
 
 -- institution cursor
