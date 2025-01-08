@@ -125,19 +125,10 @@ from base where row_num = 1
 ;
 select * , row_number() over (partition by account_name order by pull_date desc) as row_num
 from account_history
-where account_name like  '%Costco%';ç
+where account_name like  '%Costco%';
 
-select count(*)
-from institutions
-union all 
-select count(*)
-from category_mappings
-union all 
-select count(*)
-from group_mappings
-union All
-select count(*)
-from items;
+select * from items;
+select * from institutions;
 
 
 

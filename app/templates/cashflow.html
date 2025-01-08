@@ -152,14 +152,17 @@
             <div class="summary-card">
                 <h3>Total Cash In</h3>
                 <div class="summary-value positive" id="total-cash-in">Loading...</div>
+                <div class="summary-value positive" style="font-size: 1em;" id="avg-cash-in">Loading...</div>
             </div>
             <div class="summary-card">
                 <h3>Total Cash Out</h3>
                 <div class="summary-value negative" id="total-cash-out">Loading...</div>
+                <div class="summary-value negative" style="font-size: 1em;" id="avg-cash-out">Loading...</div>
             </div>
             <div class="summary-card">
                 <h3>Net Cash Flow</h3>
                 <div class="summary-value" id="net-cash-flow">Loading...</div>
+                <div class="summary-value" style="font-size: 1em;" id="avg-net-flow">Loading...</div>
             </div>
         </div>
 
@@ -241,6 +244,18 @@
                         // Update summary cards
                         $('#total-cash-in').text(formatCurrency(data.total_cash_in));
                         $('#total-cash-out').text(formatCurrency(data.total_cash_out));
+                        
+                        // Calculate and display monthly averages
+                        const avgCashIn = data.cash_in.reduce((a, b) => a + b, 0) / data.months.length;
+                        const avgCashOut = data.cash_out.reduce((a, b) => a + b, 0) / data.months.length;
+                        const avgNetFlow = data.net_flow.reduce((a, b) => a + b, 0) / data.months.length;
+
+                        $('#avg-cash-in').text(`Avg/mo: ${formatCurrency(avgCashIn)}`);
+                        $('#avg-cash-out').text(`Avg/mo: ${formatCurrency(avgCashOut)}`);
+                        $('#avg-net-flow')
+                            .text(`Avg/mo: ${formatCurrency(avgNetFlow)}`)
+                            .removeClass('positive negative neutral')
+                            .addClass(avgNetFlow > 0 ? 'positive' : avgNetFlow < 0 ? 'negative' : 'neutral');
                         
                         const netFlow = data.net_cash_flow;
                         $('#net-cash-flow')

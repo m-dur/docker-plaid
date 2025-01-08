@@ -162,6 +162,17 @@
             background-color: white;
             z-index: 1;
         }
+
+        .delete-transaction {
+            cursor: pointer;
+            margin-left: 5px;
+            opacity: 0.7;
+            text-decoration: none;
+        }
+        
+        .delete-transaction:hover {
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -362,6 +373,39 @@
             container.replaceWith(newCell.firstElementChild);
         }
 
+        async function deleteTransaction(transactionId) {
+            if (!confirm('Are you sure you want to delete this transaction? This action cannot be undone.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/transactions/api/transactions/delete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ transaction_id: transactionId })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Remove the row from the DataTable
+                    const table = $('#transactions-table').DataTable();
+                    const row = table.row($(`tr:has(td:contains('${transactionId}'))`));
+                    row.remove().draw();
+                    
+                    // Show success message
+                    alert('Transaction deleted successfully');
+                } else {
+                    throw new Error(data.error || 'Failed to delete transaction');
+                }
+            } catch (error) {
+                console.error('Error deleting transaction:', error);
+                alert('Error deleting transaction: ' + error.message);
+            }
+        }
+
         $(document).ready(function() {
             $.ajax({
                 url: '/transactions/api/transactions',
@@ -378,6 +422,7 @@
                             'group_name',
                             'name',
                             'amount',
+                            'actions',
                             ...Object.keys(data[0]).filter(key => 
                                 !['account_id', 'authorized_datetime', 'payment_channel', 'date', 'account_name', 'category', 'group_name', 'name', 'amount'].includes(key)
                             )
@@ -388,7 +433,7 @@
                         tableHtml += '</tr></thead><tbody>';
                         
                         data.forEach((row, index) => {
-                            tableHtml += `<tr><td>${index + 1}</td>`;
+                            tableHtml += `<tr data-transaction-id="${row.transaction_id}"><td>${index + 1}</td>`;
                             orderedKeys.forEach(key => {
                                 if (key === 'category') {
                                     tableHtml += `<td>${createCategoryCell(row.transaction_id, row[key], row.name)}</td>`;
@@ -397,6 +442,10 @@
                                     tableHtml += `<td class="${amountClass}">$${Math.abs(parseFloat(row[key])).toFixed(2)}</td>`;
                                 } else if (key === 'group_name') {
                                     tableHtml += `<td>${createGroupCell(row.transaction_id, row[key], row.name)}</td>`;
+                                } else if (key === 'actions') {
+                                    tableHtml += `<td>
+                                        <a class="delete-transaction" onclick="deleteTransaction('${row.transaction_id}')" title="Delete transaction">🗑️</a>
+                                    </td>`;
                                 } else {
                                     tableHtml += `<td>${row[key] === null ? 'N/A' : row[key]}</td>`;
                                 }

@@ -192,7 +192,7 @@ def get_transactions():
                 t.group_name,
                 t.name,
                 t.amount
-            FROM transactions t
+            FROM stg_transactions t
             LEFT JOIN accounts a ON t.account_id = a.account_id
             ORDER BY t.date DESC
         """)
@@ -203,3 +203,49 @@ def get_transactions():
     finally:
         cur.close()
         conn.close()
+
+@transactions_bp.route('/api/transactions/delete', methods=['POST'])
+def delete_transaction():
+    try:
+        data = request.get_json()
+        if not data or 'transaction_id' not in data:
+            return jsonify({'error': 'Transaction ID is required'}), 400
+            
+        transaction_id = data['transaction_id']
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        try:
+            # Start transaction
+            cur.execute("BEGIN")
+            
+            # Delete the transaction from the transactions table (not stg_transactions)
+            cur.execute("""
+                DELETE FROM transactions 
+                WHERE transaction_id = %s
+                RETURNING transaction_id
+            """, (transaction_id,))
+            
+            deleted = cur.fetchone()
+            if not deleted:
+                cur.execute("ROLLBACK")
+                return jsonify({'error': 'Transaction not found'}), 404
+                
+            conn.commit()
+            return jsonify({
+                'success': True,
+                'transaction_id': transaction_id
+            })
+            
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            raise e
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
