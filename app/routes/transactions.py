@@ -249,3 +249,55 @@ def delete_transaction():
             cur.close()
         if conn:
             conn.close()
+
+@transactions_bp.route('/api/transactions/update_name', methods=['POST'])
+def update_transaction_name():
+    try:
+        data = request.get_json()
+        transaction_id = data.get('transaction_id')
+        new_name = data.get('name')
+        update_all = data.get('update_all', False)
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        try:
+            # Start transaction
+            cur.execute("BEGIN")
+            
+            if update_all:
+                # First get the original name
+                cur.execute("""
+                    SELECT name FROM transactions 
+                    WHERE transaction_id = %s
+                """, (transaction_id,))
+                original_name = cur.fetchone()[0]
+                
+                # Update all transactions with the same name
+                cur.execute("""
+                    UPDATE transactions 
+                    SET name = %s
+                    WHERE name = %s
+                """, (new_name, original_name))
+            else:
+                # Update single transaction
+                cur.execute("""
+                    UPDATE transactions 
+                    SET name = %s
+                    WHERE transaction_id = %s
+                """, (new_name, transaction_id))
+            
+            conn.commit()
+            return jsonify({'success': True})
+            
+        except Exception as e:
+            cur.execute("ROLLBACK")
+            raise e
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()

@@ -109,26 +109,15 @@ AND pull_date = (
 );
 
 
-select *
-from account_history
-where type = 'credit'
-and account_name like '%Citi%'
-order by 1;
+-- items for last refresh for each account
+select institution_name
+, created_at
+, error_type
+, error_message
+, transactions_last_failed_update
+, transactions_last_successful_update
+from items
 
-with base as (select * , row_number() over (partition by account_name order by pull_date desc) as row_num
-from account_history
-where type = 'depository'
-)
-select * 
-from base where row_num = 1
-
-;
-select * , row_number() over (partition by account_name order by pull_date desc) as row_num
-from account_history
-where account_name like  '%Costco%';
-
-select * from items;
-select * from institutions;
 
 
 

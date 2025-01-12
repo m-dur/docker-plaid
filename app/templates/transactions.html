@@ -173,6 +173,29 @@
         .delete-transaction:hover {
             opacity: 1;
         }
+
+        .name-display {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .edit-name {
+            cursor: pointer;
+            color: #0A85EA;
+            opacity: 0.7;
+        }
+
+        .edit-name:hover {
+            opacity: 1;
+        }
+
+        .name-input {
+            padding: 4px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 200px;
+        }
     </style>
 </head>
 <body>
@@ -198,6 +221,15 @@
     <script src="https://cdn.datatables.net/select/1.7.0/js/dataTables.select.min.js"></script>
     <script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
     <script>
+        function createNameCell(transactionId, name) {
+            return `
+                <div class="name-display">
+                    <span class="name-text">${name || 'N/A'}</span>
+                    <a class="edit-name" onclick="editName(this, '${transactionId}', '${name || ''}')">✏️</a>
+                </div>
+            `;
+        }
+
         function createCategoryCell(transactionId, category, transactionName) {
             const escapedTransactionName = transactionName ? transactionName.replace(/'/g, "\\'") : '';
             return `
@@ -406,6 +438,83 @@
             }
         }
 
+        function editName(element, transactionId, currentName) {
+            // First, cancel any existing edits
+            const existingEdits = document.querySelectorAll('.name-edit');
+            existingEdits.forEach(edit => {
+                const id = edit.querySelector('.save-name').getAttribute('onclick').split("'")[1];
+                const name = edit.querySelector('.name-input').value;
+                cancelNameEdit(edit.querySelector('.cancel-name'), id, name);
+            });
+
+            const container = element.closest('.name-display');
+            const input = document.createElement('div');
+            input.className = 'name-edit';
+            
+            input.innerHTML = `
+                <div>
+                    <input type="text" class="name-input" value="${currentName || ''}" />
+                    <div class="edit-options">
+                        <label class="update-all-label">
+                            <input type="checkbox" class="update-all-checkbox" />
+                            Update all transactions with name "${currentName}"
+                        </label>
+                        <div class="button-group">
+                            <button class="save-name" onclick="saveName('${transactionId}', this)">Save</button>
+                            <button class="cancel-name" onclick="cancelNameEdit(this, '${transactionId}', '${currentName}')">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            container.replaceWith(input);
+        }
+
+        function saveName(transactionId, element) {
+            const container = element.closest('.name-edit');
+            const newName = container.querySelector('.name-input').value;
+            const updateAll = container.querySelector('.update-all-checkbox').checked;
+
+            fetch('/transactions/api/transactions/update_name', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    transaction_id: transactionId,
+                    name: newName,
+                    update_all: updateAll
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    if (updateAll) {
+                        // Refresh the entire table to show all updates
+                        $('.display').DataTable().ajax.reload();
+                    } else {
+                        // Update just this cell
+                        const newCell = document.createElement('div');
+                        newCell.innerHTML = createNameCell(transactionId, newName);
+                        container.replaceWith(newCell.firstElementChild);
+                    }
+                } else {
+                    alert('Error updating name: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error updating name: ' + error.message);
+            });
+        }
+
+        function cancelNameEdit(element, transactionId, currentName) {
+            const container = element.closest('.name-edit');
+            const newCell = document.createElement('div');
+            newCell.innerHTML = createNameCell(transactionId, currentName);
+            container.replaceWith(newCell.firstElementChild);
+        }
+
         $(document).ready(function() {
             $.ajax({
                 url: '/transactions/api/transactions',
@@ -446,6 +555,8 @@
                                     tableHtml += `<td>
                                         <a class="delete-transaction" onclick="deleteTransaction('${row.transaction_id}')" title="Delete transaction">🗑️</a>
                                     </td>`;
+                                } else if (key === 'name') {
+                                    tableHtml += `<td>${createNameCell(row.transaction_id, row[key])}</td>`;
                                 } else {
                                     tableHtml += `<td>${row[key] === null ? 'N/A' : row[key]}</td>`;
                                 }

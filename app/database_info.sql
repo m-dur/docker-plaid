@@ -161,7 +161,8 @@ CREATE TABLE transactions (
     payment_channel VARCHAR(50),
     authorized_datetime TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    pull_date DATE DEFAULT CURRENT_DATE
+    pull_date DATE DEFAULT CURRENT_DATE,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 drop view stg_transactions;
