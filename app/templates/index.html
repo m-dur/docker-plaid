@@ -351,6 +351,36 @@
         background-color: #ff9800;
         color: white;
     }
+
+    .update-button {
+        background-color: #ff9800;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-top: 10px;
+        font-weight: bold;
+    }
+
+    .update-button:hover {
+        background-color: #f57c00;
+    }
+
+    .reauth-button {
+        background-color: #ff9800;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-left: 10px;
+        font-weight: bold;
+    }
+
+    .reauth-button:hover {
+        background-color: #f57c00;
+    }
   </style>
 </head>
 <body>
@@ -384,6 +414,9 @@
                 <p>Institution ID: <code>{{ institution.id }}</code></p>
                 <button class="remove-institution" data-institution-id="{{ institution.id }}">
                     Remove Institution
+                </button>
+                <button class="update-button" data-institution-id="{{ institution.id }}">
+                    Update Connection
                 </button>
             </div>
             <div class="metadata-sections">
@@ -437,7 +470,13 @@
                         </div>
                     </div>
                 </div>
+                <div id="reauth-button-{{ institution.id }}"></div>
             </div>
+            {% if institution.error_type %}
+                <button onclick="handleItemUpdate('{{ institution.id }}')" class="update-button">
+                    Re-authenticate Account
+                </button>
+            {% endif %}
         </div>
         {% endfor %}
     </div>
@@ -677,22 +716,26 @@
             
             const data = await response.json();
             
-            // Update status indicators
             const statusElement = document.getElementById(`status-${institutionId}`);
             const statusDetailsElement = document.getElementById(`status-details-${institutionId}`);
+            const reauthButtonContainer = document.getElementById(`reauth-button-${institutionId}`);
             
             if (data.error) {
                 statusElement.textContent = 'Error';
                 statusElement.className = 'value status-indicator status-error';
                 statusDetailsElement.textContent = data.error.display_message || data.error.error_message || 'Unknown error';
-            } else if (data.warning) {
-                statusElement.textContent = 'Warning';
-                statusElement.className = 'value status-indicator status-warning';
-                statusDetailsElement.textContent = data.warning;
+                
+                // Add the reauth button
+                reauthButtonContainer.innerHTML = `
+                    <button onclick="handleItemUpdate('${institutionId}')" class="update-button">
+                        Re-authenticate Account
+                    </button>
+                `;
             } else {
                 statusElement.textContent = 'Good';
                 statusElement.className = 'value status-indicator status-good';
                 statusDetailsElement.textContent = 'Account in good standing';
+                reauthButtonContainer.innerHTML = ''; // Remove button if no error
             }
 
             // Update all metadata fields
@@ -928,6 +971,113 @@
                 }
             });
         });
+    });
+
+    async function handleItemUpdate(institutionId) {
+        try {
+            $('.loading-overlay').css('display', 'flex');
+            $('.loading-text').text('Preparing to update account...');
+            
+            const response = await fetch(`/create_update_link_token/${institutionId}`, {
+                method: 'POST'
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to create update link token');
+            }
+            
+            const data = await response.json();
+            
+            if (!data.link_token) {
+                throw new Error('No link token received');
+            }
+            
+            const updateHandler = Plaid.create({
+                token: data.link_token,
+                onSuccess: async (public_token, metadata) => {
+                    await handlePlaidSuccess(public_token, metadata);
+                    window.location.reload();
+                },
+                onExit: () => {
+                    $('.loading-overlay').hide();
+                },
+                onEvent: (eventName, metadata) => {
+                    console.log('Plaid Event:', eventName, metadata);
+                }
+            });
+            
+            updateHandler.open();
+        } catch (error) {
+            console.error('Error updating item:', error);
+            $('.loading-overlay').hide();
+            alert('Error starting update process. Please try again.');
+        }
+    }
+
+    // Add this to show the button when error is detected
+    function showReauthButton(institutionId, itemId) {
+        $(`#reauth-button-${institutionId}`).html(`
+            <button onclick="handleItemUpdate('${itemId}')" class="update-button">
+                Re-authenticate Account
+            </button>
+        `);
+    }
+
+    // Modify the updateInstitutionMetadata function to check for errors
+    function updateInstitutionMetadata(institutionId, metadata) {
+        if (metadata.error && metadata.error.error_code === 'ITEM_LOGIN_REQUIRED') {
+            showReauthButton(institutionId, metadata.item_id);
+            $(`#status-${institutionId}`).addClass('status-error').text('Error');
+        }
+        // ... rest of your metadata update code ...
+    }
+
+    // Add click handler for update connection buttons
+    $(document).on('click', '.update-button', async function() {
+        const institutionId = $(this).closest('.institution-container').find('.remove-institution').data('institution-id');
+        if (!institutionId) {
+            console.error('No institution ID found');
+            return;
+        }
+        
+        try {
+            $('.loading-overlay').css('display', 'flex');
+            $('.loading-text').text('Preparing to update account...');
+            
+            const response = await fetch(`/create_update_link_token/${institutionId}`, {
+                method: 'POST'
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to create update link token');
+            }
+            
+            const data = await response.json();
+            
+            if (!data.link_token) {
+                throw new Error('No link token received');
+            }
+            
+            const updateHandler = Plaid.create({
+                token: data.link_token,
+                onSuccess: async (public_token, metadata) => {
+                    await handlePlaidSuccess(public_token, metadata);
+                    window.location.reload();
+                },
+                onExit: () => {
+                    $('.loading-overlay').hide();
+                },
+                onEvent: (eventName, metadata) => {
+                    console.log('Plaid Event:', eventName, metadata);
+                }
+            });
+            
+            updateHandler.open();
+        } catch (error) {
+            console.error('Error updating item:', error);
+            $('.loading-overlay').hide();
+            alert('Error starting update process. Please try again.');
+        }
     });
   })(jQuery);
   </script>

@@ -25,6 +25,10 @@ import logging
 import threading
 import time
 from psycopg2.extensions import AsIs
+import uuid
+from plaid.model.link_token_create_request import LinkTokenCreateRequest
+from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+from plaid.model.country_code import CountryCode
 
 # Then create the Flask app
 app = Flask(__name__)
@@ -38,6 +42,24 @@ app.logger.setLevel(logging.DEBUG)
 # Register blueprints after creating the app
 app.register_blueprint(analytics_bp)
 app.register_blueprint(transactions_bp, url_prefix='/transactions')
+
+def get_access_token_by_institution_id(institution_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT access_token 
+            FROM access_tokens 
+            WHERE institution_id = %s
+        """, (institution_id,))
+        result = cur.fetchone()
+        return result[0] if result else None
+    except Exception as e:
+        print(f"Error getting access token: {str(e)}")
+        return None
+    finally:
+        cur.close()
+        conn.close()
 
 @app.route('/')
 def index():
@@ -738,6 +760,36 @@ def get_item_details_route(institution_id):
     finally:
         cur.close()
         conn.close()
+
+
+
+@app.route('/create_update_link_token/<institution_id>', methods=['POST'])
+def create_update_link_token(institution_id):
+    try:
+        # Get the access token for this institution
+        access_token = get_access_token_by_institution_id(institution_id)
+        
+        if not access_token:
+            return jsonify({'error': 'Access token not found'}), 404
+            
+        client = create_plaid_client()
+        
+        # Create an update link token
+        request = LinkTokenCreateRequest(
+            client_name="Your App Name",
+            language='en',
+            country_codes=[CountryCode('US')],
+            user=LinkTokenCreateRequestUser(
+                client_user_id=str(uuid.uuid4())
+            ),
+            access_token=access_token
+        )
+        
+        response = client.link_token_create(request)
+        return jsonify({'link_token': response.link_token})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
