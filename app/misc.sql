@@ -116,9 +116,34 @@ select institution_name
 , error_message
 , transactions_last_failed_update
 , transactions_last_successful_update
+from items;
+
+select *
+from category_mappings
+where transaction_name like '%Costco%';
+
+
+-- duplicate transactions
+WITH duplicate_amounts AS (
+    SELECT 
+        t1.amount,
+        a1.account_name,
+        t2.amount as duplicate_amount,
+        a2.account_name as duplicate_account,
+        GREATEST(t1.date, t2.date) as last_occurrence_date
+    FROM stg_transactions t1
+    JOIN accounts a1 ON t1.account_id = a1.account_id
+    JOIN stg_transactions t2 ON 
+        t1.amount = t2.amount
+        AND t1.transaction_id != t2.transaction_id
+        AND t2.date BETWEEN t1.date - INTERVAL '7 days' AND t1.date + INTERVAL '7 days'
+        AND t1.transaction_id < t2.transaction_id  -- Avoid reverse pairs
+    JOIN accounts a2 ON t2.account_id = a2.account_id
+    WHERE t1.amount > 0  -- Only look at expenses
+)
+-- Add this query to check pending transactions in raw table
+SELECT *
 from items
-
-
 
 
 

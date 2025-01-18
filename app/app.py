@@ -415,6 +415,19 @@ def get_institution_metadata(institution_id):
     cur = conn.cursor()
     
     try:
+        # First check for any errors in the items table
+        cur.execute("""
+            SELECT 
+                error_type,
+                error_code,
+                error_message
+            FROM items 
+            WHERE institution_id = %s 
+            ORDER BY updated_at DESC 
+            LIMIT 1
+        """, (institution_id,))
+        error_data = cur.fetchone()
+        
         # Get institution details and item count
         cur.execute("""
             SELECT 
@@ -462,7 +475,7 @@ def get_institution_metadata(institution_id):
         """, (institution_id, institution_id))
         new_transactions = cur.fetchone()[0]
         
-        return jsonify({
+        response_data = {
             'last_transaction': last_transaction.isoformat() if last_transaction else None,
             'last_refresh': inst_data[0].isoformat() if inst_data and inst_data[0] else None,
             'connected_on': inst_data[1].isoformat() if inst_data and inst_data[1] else None,
@@ -471,7 +484,17 @@ def get_institution_metadata(institution_id):
             'account_count': counts[0],
             'transaction_count': counts[1],
             'uncategorized_count': counts[2] if counts[2] else 0
-        })
+        }
+
+        # Add error information if present
+        if error_data and error_data[0]:  # if error_type exists
+            response_data['error'] = {
+                'error_type': error_data[0],
+                'error_code': error_data[1],
+                'error_message': error_data[2]
+            }
+            
+        return jsonify(response_data)
         
     except Exception as e:
         print(f"Error in get_institution_metadata: {str(e)}")
@@ -577,7 +600,7 @@ def refresh_financial_data(institution_id):
                     transactions_last_failed_update,
                     last_webhook_received_at
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 ON CONFLICT (item_id) DO UPDATE SET
                     available_products = EXCLUDED.available_products,

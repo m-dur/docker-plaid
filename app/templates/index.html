@@ -330,6 +330,27 @@
     
     /* Remove the previous background color */
     /* body { background-color: #B8B0E5; } */
+
+    .status-indicator {
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-weight: bold;
+    }
+
+    .status-good {
+        background-color: #4CAF50;
+        color: white;
+    }
+
+    .status-error {
+        background-color: #f44336;
+        color: white;
+    }
+
+    .status-warning {
+        background-color: #ff9800;
+        color: white;
+    }
   </style>
 </head>
 <body>
@@ -369,6 +390,14 @@
                 <div class="institution-metadata" id="metadata-{{ institution.id }}">
                     <h4>Account Status</h4>
                     <div class="metadata-grid">
+                        <div class="metadata-item">
+                            <span class="label">Status</span>
+                            <span class="value status-indicator" id="status-{{ institution.id }}">Loading...</span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="label">Status Details</span>
+                            <span class="value" id="status-details-{{ institution.id }}">Loading...</span>
+                        </div>
                         <div class="metadata-item">
                             <span class="label">Last Transaction</span>
                             <span class="value" id="last-transaction-{{ institution.id }}">Loading...</span>
@@ -521,6 +550,14 @@
                                     <h4>Account Status</h4>
                                     <div class="metadata-grid">
                                         <div class="metadata-item">
+                                            <span class="label">Status</span>
+                                            <span class="value status-indicator" id="status-${data.institution_id}">Loading...</span>
+                                        </div>
+                                        <div class="metadata-item">
+                                            <span class="label">Status Details</span>
+                                            <span class="value" id="status-details-${data.institution_id}">Loading...</span>
+                                        </div>
+                                        <div class="metadata-item">
                                             <span class="label">Last Transaction</span>
                                             <span class="value" id="last-transaction-${data.institution_id}">Never</span>
                                         </div>
@@ -640,6 +677,24 @@
             
             const data = await response.json();
             
+            // Update status indicators
+            const statusElement = document.getElementById(`status-${institutionId}`);
+            const statusDetailsElement = document.getElementById(`status-details-${institutionId}`);
+            
+            if (data.error) {
+                statusElement.textContent = 'Error';
+                statusElement.className = 'value status-indicator status-error';
+                statusDetailsElement.textContent = data.error.display_message || data.error.error_message || 'Unknown error';
+            } else if (data.warning) {
+                statusElement.textContent = 'Warning';
+                statusElement.className = 'value status-indicator status-warning';
+                statusDetailsElement.textContent = data.warning;
+            } else {
+                statusElement.textContent = 'Good';
+                statusElement.className = 'value status-indicator status-good';
+                statusDetailsElement.textContent = 'Account in good standing';
+            }
+
             // Update all metadata fields
             const fields = {
                 'last-transaction': data.last_transaction ? new Date(data.last_transaction).toLocaleString() : 'Never',
@@ -727,6 +782,14 @@
                 <h4>Account Status</h4>
                 <div class="metadata-grid">
                     <!-- Add your metadata items here -->
+                    <div class="metadata-item">
+                        <span class="label">Status</span>
+                        <span class="value status-indicator" id="status-${institution.id}">Loading...</span>
+                    </div>
+                    <div class="metadata-item">
+                        <span class="label">Status Details</span>
+                        <span class="value" id="status-details-${institution.id}">Loading...</span>
+                    </div>
                     <div class="metadata-item">
                         <span class="label">Last Transaction</span>
                         <span class="value" id="last-transaction-${institution.id}">Loading...</span>
@@ -873,6 +936,24 @@
       fetch(`/api/institution_metadata/${institutionId}`)
           .then(response => response.json())
           .then(data => {
+              // Update status indicators
+              const statusElement = document.getElementById(`status-${institutionId}`);
+              const statusDetailsElement = document.getElementById(`status-details-${institutionId}`);
+              
+              if (data.error) {
+                  statusElement.textContent = 'Error';
+                  statusElement.className = 'value status-indicator status-error';
+                  statusDetailsElement.textContent = data.error.display_message || data.error.error_message || 'Unknown error';
+              } else if (data.warning) {
+                  statusElement.textContent = 'Warning';
+                  statusElement.className = 'value status-indicator status-warning';
+                  statusDetailsElement.textContent = data.warning;
+              } else {
+                  statusElement.textContent = 'Good';
+                  statusElement.className = 'value status-indicator status-good';
+                  statusDetailsElement.textContent = 'Account in good standing';
+              }
+
               // Update last transaction
               document.getElementById(`last-transaction-${institutionId}`).textContent = 
                   data.last_transaction ? new Date(data.last_transaction).toLocaleString() : 'Never';
@@ -903,6 +984,13 @@
           })
           .catch(error => {
               console.error('Error:', error);
+              const statusElement = document.getElementById(`status-${institutionId}`);
+              const statusDetailsElement = document.getElementById(`status-details-${institutionId}`);
+              
+              statusElement.textContent = 'Error';
+              statusElement.className = 'value status-indicator status-error';
+              statusDetailsElement.textContent = 'Failed to fetch account status';
+              
               ['last-transaction', 'last-refresh', 'last-credit', 'connected-on',
                'item-count', 'account-count', 'transaction-count', 'uncategorized-count'].forEach(field => {
                   document.getElementById(`${field}-${institutionId}`).textContent = 'Error';

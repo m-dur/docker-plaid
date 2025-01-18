@@ -29,6 +29,23 @@ class FinancialDataHandler:
     def __init__(self):
         pass
 
+    def serialize_item_details(self, item_dict):
+        """Convert datetime objects to ISO format strings in item details"""
+        def serialize_value(v):
+            if isinstance(v, datetime):
+                return v.isoformat() if v else None
+            elif isinstance(v, dict):
+                return {k: serialize_value(val) for k, val in v.items()}
+            elif isinstance(v, list):
+                return [serialize_value(i) for i in v]
+            return v
+        
+        # Handle None case
+        if item_dict is None:
+            return None
+        
+        return serialize_value(item_dict)
+
     def fetch_and_process_financial_data(self, access_token, conn=None, cur=None, item_info=None):
         print("\n=== Financial Data Processing Debug ===")
         
@@ -55,6 +72,16 @@ class FinancialDataHandler:
             # Get item details first
             print("\n=== Item Details ===")
             item_response = get_item_details(access_token)
+            
+            # Convert datetime objects to strings before JSON serialization
+            if item_response:
+                item_dict = item_response.to_dict()
+                
+                # Serialize all datetime objects in the response
+                item_dict = self.serialize_item_details(item_dict)
+                print(json.dumps(item_dict, indent=2))
+            else:
+                print("No item response received")
             
             if not item_response or not hasattr(item_response, 'item'):
                 raise Exception("Failed to get item details")
@@ -84,15 +111,63 @@ class FinancialDataHandler:
             consented_data_scopes = [str(s) for s in item.consented_data_scopes] if item.consented_data_scopes else []
             consented_use_cases = [str(u) for u in item.consented_use_cases] if item.consented_use_cases else []
             
+            # Extract error information, converting enum to string if present
+            if item.error:
+                error_dict = item.error.to_dict() if hasattr(item.error, 'to_dict') else {
+                    'error_type': item.error.error_type,
+                    'error_code': item.error.error_code,
+                    'error_message': item.error.error_message
+                }
+                error_type = str(error_dict.get('error_type'))
+                error_code = str(error_dict.get('error_code'))
+                error_message = error_dict.get('error_message')
+            else:
+                error_type = None
+                error_code = None
+                error_message = None
+
             # Insert/Update items table
             try:
+                item_details = {
+                    'item_id': item.item_id,
+                    'institution_id': item.institution_id,
+                    'institution_name': item.institution_name,
+                    'available_products': available_products,
+                    'billed_products': billed_products,
+                    'products': products,
+                    'consented_products': consented_products,
+                    'consented_data_scopes': consented_data_scopes,
+                    'consented_use_cases': consented_use_cases,
+                    'consent_expiration_time': consent_expiration_time.isoformat() if consent_expiration_time else None,
+                    'created_at': created_at.isoformat() if created_at else None,
+                    'update_type': item.update_type,
+                    'webhook': item.webhook,
+                    'error_type': error_type,
+                    'error_code': error_code,
+                    'error_message': error_message,
+                    'transactions_last_successful_update': last_successful_update.isoformat() if last_successful_update else None,
+                    'transactions_last_failed_update': last_failed_update.isoformat() if last_failed_update else None,
+                    'last_webhook_received_at': last_webhook.isoformat() if last_webhook else None
+                }
+                item_details = self.serialize_item_details(item_details)
                 cur.execute("""
                     INSERT INTO items (
-                        item_id, institution_id, institution_name,
-                        available_products, billed_products, products,
-                        consented_products, consented_data_scopes, consented_use_cases,
-                        consent_expiration_time, created_at, update_type,
-                        webhook, error_type, error_code, error_message,
+                        item_id,
+                        institution_id,
+                        institution_name,
+                        available_products,
+                        billed_products,
+                        products,
+                        consented_products,
+                        consented_data_scopes,
+                        consented_use_cases,
+                        consent_expiration_time,
+                        created_at,
+                        update_type,
+                        webhook,
+                        error_type,
+                        error_code,
+                        error_message,
                         transactions_last_successful_update,
                         transactions_last_failed_update,
                         last_webhook_received_at
@@ -107,6 +182,7 @@ class FinancialDataHandler:
                         consented_data_scopes = EXCLUDED.consented_data_scopes,
                         consented_use_cases = EXCLUDED.consented_use_cases,
                         consent_expiration_time = EXCLUDED.consent_expiration_time,
+                        created_at = EXCLUDED.created_at,
                         update_type = EXCLUDED.update_type,
                         webhook = EXCLUDED.webhook,
                         error_type = EXCLUDED.error_type,
@@ -117,25 +193,25 @@ class FinancialDataHandler:
                         last_webhook_received_at = EXCLUDED.last_webhook_received_at,
                         updated_at = CURRENT_TIMESTAMP
                 """, (
-                    item.item_id,
-                    institution_info['institution_id'],
-                    item.institution_name,
-                    available_products,
-                    billed_products,
-                    products,
-                    consented_products,
-                    consented_data_scopes,
-                    consented_use_cases,
-                    consent_expiration_time,
-                    created_at,
-                    item.update_type,
-                    item.webhook,
-                    item.error.error_type if item.error else None,
-                    item.error.error_code if item.error else None,
-                    item.error.error_message if item.error else None,
-                    last_successful_update,
-                    last_failed_update,
-                    last_webhook
+                    item_details['item_id'],
+                    item_details['institution_id'],
+                    item_details['institution_name'],
+                    item_details['available_products'],
+                    item_details['billed_products'],
+                    item_details['products'],
+                    item_details['consented_products'],
+                    item_details['consented_data_scopes'],
+                    item_details['consented_use_cases'],
+                    item_details['consent_expiration_time'],
+                    item_details['created_at'],
+                    item_details['update_type'],
+                    item_details['webhook'],
+                    item_details['error_type'],
+                    item_details['error_code'],
+                    item_details['error_message'],
+                    item_details['transactions_last_successful_update'],
+                    item_details['transactions_last_failed_update'],
+                    item_details['last_webhook_received_at']
                 ))
                 conn.commit()
                 print("✓ Successfully inserted/updated item details")
