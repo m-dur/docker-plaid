@@ -24,6 +24,10 @@ def income():
 def net_income():
     return render_template('net_income.html')
 
+@analytics_bp.route('/expenses/subs')
+def expenses_subs():
+    return render_template('subs.html')
+
 @analytics_bp.route('/api/expenses/summary')
 def expenses_summary():
     conn = get_db_connection()

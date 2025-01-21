@@ -21,6 +21,7 @@ from psycopg2.extras import RealDictCursor
 from plaid.model.item_remove_request import ItemRemoveRequest
 from routes.analytics import analytics_bp
 from routes.transactions import transactions_bp
+from routes.misc import misc_bp
 import logging
 import threading
 import time
@@ -42,6 +43,7 @@ app.logger.setLevel(logging.DEBUG)
 # Register blueprints after creating the app
 app.register_blueprint(analytics_bp)
 app.register_blueprint(transactions_bp, url_prefix='/transactions')
+app.register_blueprint(misc_bp)
 
 def get_access_token_by_institution_id(institution_id):
     conn = get_db_connection()
