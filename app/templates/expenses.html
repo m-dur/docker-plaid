@@ -144,7 +144,7 @@
                 <h3>Total Expenses</h3>
                 <div class="summary-value" id="total-expenses">Loading...</div>
             </div>
-            <div class="summary-card">
+            <div class="summary-card" id="monthly-average-card" style="display: none;">
                 <h3>Monthly Average</h3>
                 <div class="summary-value" id="avg-monthly">Loading...</div>
             </div>
@@ -186,6 +186,9 @@
             // Set the saved filters after populating the dropdowns
             $('#category-filter').val(savedCategory);
             $('#month-filter').val(savedMonth);
+
+            // Set initial visibility of monthly average card
+            $('#monthly-average-card').toggle(savedMonth === 'all');
 
             // Load expenses summary data
             $.ajax({
@@ -240,9 +243,22 @@
                         month: selectedMonth
                     },
                     success: function(data) {
-                        // Update summary cards and table
+                        // Update total expenses
                         $('#total-expenses').text('$' + data.total_expenses.toFixed(2));
-                        $('#monthly-average').text('$' + data.monthly_average.toFixed(2));
+                        
+                        // Calculate and update monthly average
+                        if (data.transactions && data.transactions.length > 0) {
+                            // Get unique months from transactions
+                            const uniqueMonths = new Set(
+                                data.transactions.map(t => t.date.substring(0, 7)) // Get YYYY-MM from date
+                            );
+                            const monthCount = uniqueMonths.size;
+                            const monthlyAvg = data.total_expenses / monthCount;
+                            $('#avg-monthly').text('$' + monthlyAvg.toFixed(2));
+                        } else {
+                            $('#avg-monthly').text('$0.00');
+                        }
+                        
                         $('#highest-category').text(data.highest_category);
                         updateTable(data);
                     }
@@ -361,6 +377,20 @@
                                     },
                                     name: 'Prior Month',
                                     hovertemplate: '$%{y:.2f} Prior Month<extra></extra>'
+                                },
+                                // 6-month average line
+                                {
+                                    x: chartData.dates,
+                                    y: chartData.avg_amounts,
+                                    type: 'scatter',
+                                    mode: 'lines',
+                                    line: {
+                                        color: '#28a745',
+                                        width: 2,
+                                        dash: 'dashdot'
+                                    },
+                                    name: '6-Month Average',
+                                    hovertemplate: '$%{y:.2f} 6-Month Avg<extra></extra>'
                                 }
                             ];
 
@@ -461,6 +491,24 @@
                                         arrowcolor: '#666',
                                         arrowwidth: 1,
                                         arrowsize: 0.8
+                                    },
+                                    {
+                                        x: currentDate,
+                                        y: chartData.avg_amounts[currentIndex],
+                                        text: `<b>$${chartData.avg_amounts[currentIndex].toFixed(2)}</b><br>6-Month Avg`,
+                                        showarrow: true,
+                                        arrowhead: 2,
+                                        ax: 40,
+                                        ay: 40,
+                                        bgcolor: 'white',
+                                        bordercolor: '#28a745',
+                                        borderwidth: 1,
+                                        borderpad: 4,
+                                        font: { size: 12 },
+                                        xanchor: 'left',
+                                        arrowcolor: '#666',
+                                        arrowwidth: 1,
+                                        arrowsize: 0.8
                                     }
                                 ]
                             };
@@ -536,7 +584,11 @@
             // Month filter change handler
             $('#month-filter').on('change', function() {
                 const selectedMonth = $(this).val();
-                localStorage.setItem('expensesMonthFilter', selectedMonth);  // Save to localStorage
+                localStorage.setItem('expensesMonthFilter', selectedMonth);
+                
+                // Show/hide monthly average card based on selection
+                $('#monthly-average-card').toggle(selectedMonth === 'all');
+                
                 updateChart();
                 updateDashboard();
             });

@@ -615,6 +615,7 @@ def expenses_daily():
         
         current_month = datetime.strptime(month, '%Y-%m').replace(tzinfo=ZoneInfo("America/Los_Angeles"))
         prior_month = current_month - relativedelta(months=1)
+        six_months_ago = current_month - relativedelta(months=6)
 
         # Get the last day for both months
         _, current_last_day = calendar.monthrange(current_month.year, current_month.month)
@@ -626,6 +627,56 @@ def expenses_daily():
         prior_start = prior_month.replace(day=1)
         prior_end = prior_month.replace(day=prior_last_day)
         
+        # Add query for 4-month average
+        avg_query = """
+        WITH RECURSIVE dates AS (
+            SELECT generate_series(
+                DATE_TRUNC('month', %s::timestamptz),
+                (DATE_TRUNC('month', %s::timestamptz) + INTERVAL '1 month - 1 day'),
+                '1 day'::interval
+            )::date AS date
+        ),
+        prior_months_totals AS (
+            SELECT 
+                EXTRACT(DAY FROM date) as day_of_month,
+                SUM(amount) as daily_total
+            FROM stg_transactions
+            WHERE date >= %s::timestamptz 
+            AND date < %s::timestamptz
+            AND amount > 0
+            AND LOWER(COALESCE(category, '')) NOT LIKE '%%transfer%%'
+            {category_filter}
+            GROUP BY EXTRACT(DAY FROM date)
+        ),
+        daily_avgs AS (
+            SELECT 
+                day_of_month,
+                COALESCE(daily_total / 4.0, 0) as avg_daily_amount
+            FROM prior_months_totals
+        )
+        SELECT 
+            d.date,
+            COALESCE(SUM(da.avg_daily_amount) OVER (ORDER BY d.date), 0) as cumulative_avg
+        FROM dates d
+        LEFT JOIN daily_avgs da ON EXTRACT(DAY FROM d.date) = da.day_of_month
+        ORDER BY d.date;
+        """
+
+        category_filter = "AND category = %s" if category != 'all' else ""
+        avg_query = avg_query.format(category_filter=category_filter)
+        
+        # Update the date ranges for the 4-month average calculation
+        four_month_end = current_start  # End at the start of current month
+        four_month_start = four_month_end - relativedelta(months=4)  # Go back 4 months
+
+        # Update the parameters for the query
+        params = [current_start, current_end, four_month_start, four_month_end]
+        if category != 'all':
+            params.append(category)
+        cur.execute(avg_query, tuple(params))
+        avg_results = cur.fetchall()
+
+        # Get existing current and prior month data
         base_query = """
         WITH RECURSIVE dates AS (
             SELECT generate_series(
@@ -684,6 +735,7 @@ def expenses_daily():
             'dates': current_dates,
             'amounts': [float(row[1]) for row in current_results],
             'prior_amounts': prior_amounts,
+            'avg_amounts': [float(row[1]) for row in avg_results],
             'current_date': current_pacific_date
         })
         
