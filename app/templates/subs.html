@@ -151,28 +151,24 @@
                     const hoverTrace = {
                         x: months,
                         y: months.map(month => 
-                            // Set y value to max height to ensure hover area covers full bar
                             Math.max(...data.monthly_data
                                 .filter(d => d.month === month)
-                                .map(d => d.amount)) * 1.1  // Add 10% padding
+                                .map(d => d.amount)) * 1.1
                         ),
                         type: 'scatter',
-                        mode: 'lines',
-                        fill: 'tonexty',  // Fill to y=0
-                        fillcolor: 'rgba(0,0,0,0)',  // Transparent fill
-                        line: {
-                            color: 'rgba(0,0,0,0)',
-                            width: 0
-                        },
+                        mode: 'none',
+                        fill: 'none',
+                        opacity: 0,
                         hovertemplate: months.map(month => {
                             const monthData = data.monthly_data
                                 .filter(d => d.month === month && d.amount > 0)
-                                .map(d => `${d.name}: $${d.amount.toFixed(2)}`)
+                                .sort((a, b) => b.amount - a.amount)
+                                .map(d => `${d.name.split(' ')[0]}: <b>$${d.amount.toFixed(2)}</b>`)
                                 .join('<br>');
                             const total = data.monthly_data
                                 .filter(d => d.month === month)
                                 .reduce((sum, d) => sum + d.amount, 0);
-                            return monthData ? `<b>${month}</b><br>${monthData}<br>Total: $${total.toFixed(2)}<extra></extra>` : '';
+                            return `<b>${month}</b><br>${monthData}<br>Total: <b>$${total.toFixed(2)}</b><extra></extra>`;
                         }),
                         hoverlabel: {
                             bgcolor: 'white',
@@ -180,7 +176,9 @@
                             font: { size: 12 }
                         },
                         showlegend: false,
-                        hoverinfo: 'text'
+                        hoverinfo: 'text',
+                        hoveron: 'points+fills',
+                        visible: true
                     };
 
                     traces.push(hoverTrace);
@@ -200,7 +198,9 @@
                                     year: 'numeric'
                                 });
                             }),
-                            tickvals: months
+                            tickvals: months,
+                            showgrid: false,
+                            showline: false
                         },
                         yaxis: {
                             title: 'Amount ($)',
@@ -222,7 +222,14 @@
                             b: 200
                         },
                         height: 600,
-                        hovermode: 'closest'
+                        hovermode: 'closest',
+                        hoverdistance: 100,
+                        hoverlabel: {
+                            namelength: -1,
+                            align: 'left'
+                        },
+                        showspikes: false,
+                        spikemode: false
                     };
 
                     Plotly.newPlot('monthly-subs-chart', traces, layout);
@@ -238,6 +245,7 @@
                             { data: 'frequency' },
                             { 
                                 data: 'last_payment',
+                                type: 'date',
                                 render: (data) => new Date(data).toLocaleDateString()
                             },
                             { 
@@ -250,7 +258,7 @@
                                 render: (data) => new Date(data).toLocaleDateString()
                             }
                         ],
-                        order: [[4, 'desc']],
+                        order: [[3, 'desc']],
                         paging: false,
                         searching: false,
                         createdRow: function(row, data) {
