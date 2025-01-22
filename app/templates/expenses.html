@@ -614,52 +614,94 @@
                         }
                     });
                 } else {
-                    // Monthly bar chart view
-                    $.ajax({
-                        url: '/api/expenses/monthly',
-                        method: 'GET',
-                        data: { 
-                            category: selectedCategory,
-                            start_date: new Date(new Date().setFullYear(new Date().getFullYear() - 1)).toISOString(),
-                            end_date: new Date().toISOString()
-                        },
-                        success: function(chartData) {
-                            const trace = {
-                                x: chartData.months,
-                                y: chartData.amounts,
-                                type: 'bar',
-                                marker: {
-                                    color: '#0A85EA'
-                                },
-                                text: chartData.amounts.map(val => `$${val.toFixed(2)}`),
-                                textposition: 'auto',
-                            };
-                            
-                            const layout = {
-                                title: {
-                                    text: `Monthly Expenses - ${selectedCategory === 'all' ? 'All Categories' : selectedCategory}`,
-                                    font: { size: 18 }
-                                },
-                                xaxis: { 
-                                    title: 'Month',
-                                    tickangle: -45
-                                },
-                                yaxis: { 
-                                    title: 'Amount',
-                                    tickformat: '$,.2f'
-                                },
-                                height: 400,
-                                margin: {
-                                    b: 100,
-                                    t: 50,
-                                    l: 80,
-                                    r: 40
-                                }
-                            };
-                            
-                            Plotly.newPlot('monthly-chart', [trace], layout);
-                        }
-                    });
+                    // Check if a specific month is selected
+                    if (selectedMonth !== 'all') {
+                        // Pie chart view for single month
+                        $.ajax({
+                            url: '/api/expenses/category_breakdown',
+                            method: 'GET',
+                            data: { month: selectedMonth },
+                            success: function(chartData) {
+                                const trace = {
+                                    type: 'treemap',
+                                    labels: chartData.categories,
+                                    parents: new Array(chartData.categories.length).fill(''),
+                                    values: chartData.amounts,
+                                    textinfo: 'label+value+percent parent',
+                                    hovertemplate: '%{label}<br>$%{value:.2f}<br>%{percentParent:.1%}<extra></extra>',
+                                    marker: {
+                                        colors: chartData.amounts,
+                                        colorscale: 'Viridis'
+                                    },
+                                    textposition: "middle center",
+                                    pathbar: {visible: false}
+                                };
+                                
+                                const layout = {
+                                    title: {
+                                        text: `Expenses by Category - ${new Date(selectedMonth + '-01').toLocaleString('default', { month: 'long', year: 'numeric' })}`,
+                                        font: { size: 18 }
+                                    },
+                                    height: 600,
+                                    margin: {
+                                        t: 50,
+                                        l: 25,
+                                        r: 25,
+                                        b: 25
+                                    }
+                                };
+                                
+                                Plotly.newPlot('monthly-chart', [trace], layout);
+                            }
+                        });
+                    } else {
+                        // Monthly bar chart view (existing code)
+                        $.ajax({
+                            url: '/api/expenses/monthly',
+                            method: 'GET',
+                            data: { 
+                                category: selectedCategory,
+                                start_date: new Date(new Date().setFullYear(new Date().getFullYear() - 1)).toISOString(),
+                                end_date: new Date().toISOString()
+                            },
+                            success: function(chartData) {
+                                const trace = {
+                                    x: chartData.months,
+                                    y: chartData.amounts,
+                                    type: 'bar',
+                                    marker: {
+                                        color: '#0A85EA'
+                                    },
+                                    text: chartData.amounts.map(val => `$${val.toFixed(2)}`),
+                                    textposition: 'auto',
+                                };
+                                
+                                const layout = {
+                                    title: {
+                                        text: `Monthly Expenses - ${selectedCategory === 'all' ? 'All Categories' : selectedCategory}`,
+                                        font: { size: 18 }
+                                    },
+                                    xaxis: { 
+                                        title: 'Month',
+                                        tickangle: -45
+                                    },
+                                    yaxis: { 
+                                        title: 'Amount',
+                                        tickformat: '$,.2f'
+                                    },
+                                    height: 400,
+                                    margin: {
+                                        b: 100,
+                                        t: 50,
+                                        l: 80,
+                                        r: 40
+                                    }
+                                };
+                                
+                                Plotly.newPlot('monthly-chart', [trace], layout);
+                            }
+                        });
+                    }
                 }
             }
 

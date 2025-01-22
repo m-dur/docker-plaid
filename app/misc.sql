@@ -143,7 +143,8 @@ WITH duplicate_amounts AS (
 )
 -- Add this query to check pending transactions in raw table
 SELECT *
-from items
+from transactions
+order by date desc
 
 
 

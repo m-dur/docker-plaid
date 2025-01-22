@@ -1258,6 +1258,40 @@ def get_bank_balances():
         cur.close()
         conn.close()
 
+@analytics_bp.route('/api/expenses/category_breakdown')
+def expenses_category_breakdown():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        month = request.args.get('month')
+        
+        query = """
+        SELECT 
+            COALESCE(category, 'Uncategorized') as category,
+            SUM(amount) as total
+        FROM stg_transactions
+        WHERE amount > 0
+        AND TO_CHAR(date, 'YYYY-MM') = %s
+        AND LOWER(COALESCE(category, '')) NOT LIKE '%%transfer%%'
+        GROUP BY category
+        ORDER BY total DESC
+        """
+        
+        cur.execute(query, (month,))
+        results = cur.fetchall()
+        
+        return jsonify({
+            'categories': [row[0] for row in results],
+            'amounts': [float(row[1]) for row in results]
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
 # Add all other analytics routes from app.py
 # Including:
 # - /api/expenses/monthly
