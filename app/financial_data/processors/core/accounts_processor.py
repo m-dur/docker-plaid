@@ -1,6 +1,6 @@
 from datetime import datetime
 import pandas as pd
-from financial_data.utils.db_connection import get_db_connection
+from app.financial_data.utils.db_connection import get_db_connection
 
 def process_accounts(accounts, bank_balances, credit_cards, additional_fields=None):
     base_data = []

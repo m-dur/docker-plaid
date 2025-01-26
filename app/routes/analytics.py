@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request, render_template, current_app
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
-from financial_data.utils.db_connection import get_db_connection
+from app.financial_data.utils.db_connection import get_db_connection
 from psycopg2.extras import RealDictCursor, DictCursor
 import calendar
 from zoneinfo import ZoneInfo

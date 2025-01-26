@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request
-from financial_data.utils.db_connection import get_db_connection
+from app.financial_data.utils.db_connection import get_db_connection
 from datetime import datetime
 from collections import defaultdict
 

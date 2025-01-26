@@ -4,7 +4,7 @@ from ..processors.core.accounts_processor import process_accounts
 from ..processors.reference.institutions_processor import process_institutions
 from ..db_operations.core.accounts_db import save_accounts_to_db
 from ..db_operations.reference.institutions_db import save_institutions_to_db
-from plaid_service import (
+from app.plaid_service import (
     get_accounts, get_item, 
     get_institution_info, get_transactions_sync, get_saved_cursor, get_liabilities,
     save_cursor, create_plaid_client, delete_cursor, get_initial_transactions, get_item_details
@@ -12,8 +12,8 @@ from plaid_service import (
 from ..processors.core.transactions_processor import process_transactions
 from ..db_operations.core.transactions_db import save_transactions_to_db
 from ..db_operations.query_operations import execute_query
-from config import Config
-from financial_data.utils.db_connection import get_db_connection
+from app.config import Config
+from app.financial_data.utils.db_connection import get_db_connection
 from psycopg2.extras import execute_values
 import logging
 from plaid.model.transactions_get_request import TransactionsGetRequest

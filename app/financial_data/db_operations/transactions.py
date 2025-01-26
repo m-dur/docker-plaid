@@ -1,4 +1,4 @@
-from financial_data.utils.db_connection import get_db_connection
+from app.financial_data.utils.db_connection import get_db_connection
 from psycopg2.extras import execute_values
 
 def save_transactions_to_db(transactions_df, conn=None, cur=None):

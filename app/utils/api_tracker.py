@@ -2,7 +2,7 @@ from functools import wraps
 from flask import request, current_app
 import time
 import json
-from financial_data.utils.db_connection import get_db_connection
+from app.financial_data.utils.db_connection import get_db_connection
 
 
 def track_plaid_call(product, operation):

@@ -48,30 +48,60 @@ The application uses a sophisticated database design with:
 - Authentication (access_tokens)
 - Reference tables (category_mappings, group_mappings)
 
-## Technical Features
-
-- **Financial Analysis**
-  - Cash flow visualization
-  - Income analysis
-  - Net income tracking
-  - Daily expense monitoring
-  - Credit card balance tracking
-  - Bank account balance monitoring
-
-- **Data Processing**
-  - Automated transaction categorization
-  - Real-time data synchronization
-  - Group-based transaction mapping
-  - Historical data tracking
-
-- **User Interface**
-  - Institution connection management
-  - Real-time database statistics
-  - Interactive data visualizations
-  - Dynamic schema visualization
-  - Loading states and error handling
-
 ## Setup
+
+### Docker Setup
+1. Build and run using Docker Compose:
+```bash
+docker compose up --build
+```
+
+2. For development with live reload:
+```bash
+docker compose up --build -d
+docker compose logs -f
+```
+
+3. To rebuild from scratch (including database):
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+### Docker Container Structure
+- `web`: Flask application container
+  - Python 3.9-slim base image
+  - Auto-reloading in development mode
+  - Exposed on port 8000
+  - Volume mounted for live code updates
+- `db`: PostgreSQL database container
+  - PostgreSQL 13
+  - Persistent volume for data storage
+  - Exposed on port 5432
+  - Automatic schema initialization via init.sql
+
+### Environment Variables
+Required environment variables in `.env`:
+```bash
+# Database Configuration
+DB_NAME=your_db_name
+DB_USER=your_db_user
+DB_PASSWORD=your_db_password
+DB_PORT=5432
+
+# Plaid API Configuration
+PLAID_CLIENT_ID=your_client_id
+PLAID_SECRET=your_secret
+PLAID_ENV=sandbox
+PLAID_WEBHOOK_SECRET=your_webhook_secret
+
+# Application Configuration
+APP_URL=your_app_url
+FLASK_APP=app.app
+FLASK_ENV=development
+```
+
+### Manual Setup
 1. Configure PostgreSQL database
 2. Copy `.env.example` to `.env` and configure:
    - Plaid API credentials

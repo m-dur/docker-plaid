@@ -21,7 +21,7 @@ class Config:
     SESSION_SECRET_KEY = os.environ.get('SESSION_SECRET_KEY') or 'your-session-secret-key'
     LINK_TOKEN = os.environ.get('LINK_TOKEN')
     PLAID_WEBHOOK_SECRET = os.getenv('PLAID_WEBHOOK_SECRET')
-    APP_URL = os.getenv('APP_URL', 'http://localhost:5000')
+    APP_URL = os.getenv('APP_URL', 'http://localhost:8000')
 
     @classmethod
     def print_config(cls):

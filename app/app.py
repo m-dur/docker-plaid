@@ -2,10 +2,10 @@ import json
 import plaid
 from flask import Flask, render_template, request, jsonify, session, send_file
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
-from plaid_service import create_and_store_link_token, get_access_token, save_access_token, get_saved_access_tokens, get_institution_info, get_access_token_by_item_id, fire_sandbox_webhook, get_item, create_plaid_client, get_item_details
-from financial_data.handlers.financial_data_handler import FinancialDataHandler
-from db_schema import generate_db_schema
-from financial_data.db_operations.query_operations import execute_query, CustomJSONEncoder
+from app.plaid_service import create_and_store_link_token, get_access_token, save_access_token, get_saved_access_tokens, get_institution_info, get_access_token_by_item_id, fire_sandbox_webhook, get_item, create_plaid_client, get_item_details
+from app.financial_data.handlers.financial_data_handler import FinancialDataHandler
+from app.db_schema import generate_db_schema
+from app.financial_data.db_operations.query_operations import execute_query, CustomJSONEncoder
 import psycopg2
 import psycopg2.extras
 from io import BytesIO
@@ -13,15 +13,15 @@ import pandas as pd
 from datetime import datetime
 import hmac
 import hashlib
-from config import Config
-from financial_data.utils.db_connection import get_db_connection
+from app.config import Config
+from app.financial_data.utils.db_connection import get_db_connection
 import calendar
 from dateutil.relativedelta import relativedelta
 from psycopg2.extras import RealDictCursor
 from plaid.model.item_remove_request import ItemRemoveRequest
-from routes.analytics import analytics_bp
-from routes.transactions import transactions_bp
-from routes.misc import misc_bp
+from app.routes.analytics import analytics_bp
+from app.routes.transactions import transactions_bp
+from app.routes.misc import misc_bp
 import logging
 import threading
 import time
@@ -794,5 +794,5 @@ def create_update_link_token(institution_id):
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+    app.run(host='0.0.0.0', port=8000)
 

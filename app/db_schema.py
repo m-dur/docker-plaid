@@ -1,4 +1,4 @@
-from financial_data.utils.db_connection import get_db_connection
+from app.financial_data.utils.db_connection import get_db_connection
 
 def generate_db_schema():
     tables_html = []

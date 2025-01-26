@@ -14,7 +14,7 @@ from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
 from plaid.model.credit_card_liability import CreditCardLiability
 from datetime import datetime, timedelta
-from config import Config
+from app.config import Config
 from plaid.api_client import Configuration, ApiClient
 import time
 from flask import session
@@ -24,8 +24,8 @@ from plaid.model.item_get_request import ItemGetRequest
 from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
 from plaid.model.sandbox_item_fire_webhook_request import SandboxItemFireWebhookRequest
 from plaid.model.webhook_type import WebhookType
-from utils.api_tracker import track_plaid_call
-from financial_data.utils.db_connection import get_db_connection
+from app.utils.api_tracker import track_plaid_call
+from app.financial_data.utils.db_connection import get_db_connection
 from psycopg2.extras import RealDictCursor
 from plaid.model.transactions_get_request import TransactionsGetRequest
 
